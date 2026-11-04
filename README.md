@@ -1,0 +1,41 @@
+# Wall Art Splitter
+
+A browser tool for splitting flat 3D-printed wall art and logos into pieces that fit your printer bed.
+
+Load an STL (exported from Tinkercad or anywhere else). The tool lays the design flat, works out the fewest pieces it needs, and gives you a zip of print-ready STLs.
+
+## What it does
+
+- **Keeps loose parts whole.** Separate letters, words and shapes that fit the bed are left uncut. Only parts too big for the bed get split.
+- **Seams follow the design.** Cuts run through gaps in the art and cross solid lines at their narrowest point. You can switch to straight seams.
+- **Puzzle tabs.** Knob-and-socket joints go wherever a seam crosses art solid enough to hold one, with an adjustable fit gap.
+- **No stray bits.** A small tip that a cut would leave on its own stays with the piece it is attached to.
+- **Fits at an angle.** Each piece is checked against your bed at any rotation. Pieces that need an angle are exported already turned.
+- **Named pieces.** Cut pieces are named A1, B2… (rows from the top, columns from the left). Whole parts are P1, P2… in reading order. The zip includes `layout.txt` and `layout.png`.
+
+## Using it
+
+Open the GitHub Pages link for this repo, drop an STL onto the page, check the preview, then click **Split into pieces** and **Download pieces (.zip)**.
+
+Everything runs in your browser. Your files are never uploaded anywhere.
+
+Tips:
+- Set **Largest square you print on** a little under your real bed size (default 11.75 in for a 12 × 12 in bed).
+- In Orca Slicer, turn off auto-rotate in the Arrange settings so angled pieces keep their angle.
+- The STL must be watertight. If the tool reports holes, run Orca's **Fix model** on it and export again.
+
+## Running it yourself
+
+The page needs `index.html` and `manifold.wasm` in the same folder, served by a web server. Opening `index.html` straight from disk will not load the cutting engine. To try it locally:
+
+```
+python -m http.server 8000
+```
+
+Then open http://localhost:8000.
+
+## Credits
+
+- Geometry engine: [Manifold](https://github.com/elalish/manifold) (`manifold-3d` 3.3.2), Apache License 2.0. `manifold.wasm` is redistributed unmodified; see `licenses/manifold-3d-LICENSE.txt`.
+- Zip export: [JSZip](https://stuk.github.io/jszip/) 3.10.1, loaded from cdnjs.
+- Fonts: Barlow, Barlow Semi Condensed and JetBrains Mono from Google Fonts.

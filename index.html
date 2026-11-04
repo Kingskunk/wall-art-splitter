@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Split flat 3D-printed wall art into bed-sized pieces with puzzle joints.">
+<title>Wall Art Splitter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<style>
+/* Layout: workbench — controls rail on the left, top-down build-plate view on the right, cut list under it */
+:root{
+  --bg:#ECEFF1; --panel:#FFFFFF; --ink:#1A2027; --muted:#5A6570; --line:#D2D8DD;
+  --accent:#0A6E69; --accent-ink:#FFFFFF; --cut:#D9480F; --plate:#F6F7F8; --grid:#E3E7EA;
+  --piece-a:#7FA9A4; --piece-b:#B9CCC9; --solid:#8D99A4; --whole:#C4B08A; --ok:#2B8A3E; --bad:#C92A2A; --warnbg:#FFF4E6;
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11161B; --panel:#192027; --ink:#E5E9ED; --muted:#97A2AD; --line:#2B343D;
+  --accent:#3BB3AB; --accent-ink:#06201F; --cut:#FF8A4C; --plate:#151B21; --grid:#212931;
+  --piece-a:#3F7A74; --piece-b:#5E8C87; --solid:#6E7B87; --whole:#9A8660; --ok:#51CF66; --bad:#FF6B6B; --warnbg:#2B2116; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11161B; --panel:#192027; --ink:#E5E9ED; --muted:#97A2AD; --line:#2B343D;
+  --accent:#3BB3AB; --accent-ink:#06201F; --cut:#FF8A4C; --plate:#151B21; --grid:#212931;
+  --piece-a:#3F7A74; --piece-b:#5E8C87; --solid:#6E7B87; --whole:#9A8660; --ok:#51CF66; --bad:#FF6B6B; --warnbg:#2B2116; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1240px;margin:0 auto;display:grid;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+h1{font-family:var(--f-display);font-weight:700;font-size:28px;letter-spacing:.01em;margin:0;text-wrap:balance}
+header p{margin:0;color:var(--muted);max-width:70ch}
+.main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:820px){.main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.rail{display:grid;gap:0}
+.rail section{padding:14px 16px;display:grid;gap:10px;border-top:1px solid var(--line)}
+.rail section:first-child{border-top:0}
+.label{font-family:var(--f-display);font-weight:600;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.field{display:grid;gap:4px}
+.field label{font-size:13px;color:var(--muted)}
+input[type=number]{font:500 15px var(--f-mono);width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--plate);color:var(--ink)}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--ink);font:500 14px var(--f-body);padding:6px 12px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.btn{font:600 15px var(--f-body);border-radius:7px;padding:9px 14px;cursor:pointer;border:1px solid var(--line);background:var(--plate);color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn:disabled{opacity:.5;cursor:default}
+.drop{border:1.5px dashed var(--line);border-radius:8px;padding:12px;display:grid;gap:8px;text-align:center;cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--plate)}
+.drop strong{font-weight:600}
+.file{font:13px var(--f-mono);color:var(--muted);word-break:break-all}
+.tag{display:inline-block;font:600 11px var(--f-display);letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--warnbg);color:var(--cut)}
+.stepper{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px}
+.stepper .ctl{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.stepper .ctl button{border:0;background:var(--plate);color:var(--ink);width:32px;height:32px;font-size:18px;cursor:pointer}
+.stepper .ctl span{font:500 15px var(--f-mono);min-width:34px;text-align:center}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.check{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+.check input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--accent)}
+.btn:disabled,.stepper .ctl button:disabled{opacity:.45;cursor:default}
+.stats{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
+.stats dt{color:var(--muted)} .stats dd{margin:0;font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
+.stage{display:grid;gap:0;min-width:0}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line)}
+.summary{font-family:var(--f-display);font-weight:600;font-size:18px}
+.summary small{font-family:var(--f-body);font-weight:400;font-size:13px;color:var(--muted);margin-left:6px}
+.canvasbox{position:relative;width:100%;aspect-ratio:16/10;max-width:100%;background:var(--plate);touch-action:none}
+canvas#view{position:absolute;inset:0;width:100%;height:100%;display:block}
+.overlay[hidden],.msg[hidden],.panel[hidden]{display:none}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;font-size:14px;color:var(--muted);pointer-events:none}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;padding:10px 14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:6px;background:var(--cut)}
+.legend i.sw{height:10px;width:10px;border-radius:2px;background:var(--piece-a)}
+.msg{padding:10px 14px;border-top:1px solid var(--line);font-size:14px}
+.msg.err{color:var(--bad)}
+.progress{height:3px;background:var(--grid)} .progress div{height:100%;width:0;background:var(--accent);transition:width .15s}
+.tablebox{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font:600 12px var(--f-display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
+td{padding:8px 14px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+td.mono{font-family:var(--f-mono)}
+.pill{font:600 12px var(--f-body);padding:2px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.pill.ok{color:var(--ok)} .pill.bad{color:var(--bad)}
+.results-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line)}
+.results-head h2{font-family:var(--f-display);font-size:18px;margin:0}
+@media (prefers-reduced-motion:reduce){.progress div{transition:none}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Wall Art Splitter</h1>
+    <p>Load a flat STL. The tool picks cut lines that cross the least material, adds puzzle joints, checks every piece against your bed at any angle, and exports print-ready STLs.</p>
+  </header>
+
+  <div class="main">
+    <aside class="panel rail">
+      <section>
+        <span class="label">Design</span>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Open an STL file">
+          <strong>Drop an STL here</strong>
+          <span class="hint">or click to choose a file</span>
+          <input type="file" id="fileIn" accept=".stl" hidden>
+        </div>
+        <div class="row"><span class="file" id="fileName">Mountain sun plaque</span> <span class="tag" id="sampleTag">Sample</span></div>
+      </section>
+
+      <section>
+        <div class="row" style="justify-content:space-between">
+          <span class="label">Printer</span>
+          <div class="seg" role="group" aria-label="Units">
+            <button id="uIn" aria-pressed="true">in</button><button id="uMm" aria-pressed="false">mm</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="maxSize">Largest square you print on (<span class="unit">in</span>)</label>
+          <input type="number" id="maxSize" step="0.05" min="1" value="11.75">
+        </div>
+        <p class="hint">Your bed is 12 × 12 in. Pieces may sit at an angle to fit, so a long, narrow piece can be up to about 16.6 in.</p>
+      </section>
+
+      <section>
+        <span class="label">Joints</span>
+        <div class="seg" role="group" aria-label="Joint type">
+          <button id="jPuzzle" aria-pressed="true">Puzzle tabs</button><button id="jFlat" aria-pressed="false">Flat edges</button>
+        </div>
+        <div class="row" id="tabFields" style="flex-wrap:nowrap">
+          <div class="field"><label for="tabSize">Tab width (mm)</label><input type="number" id="tabSize" step="1" min="4" max="30" value="8"></div>
+          <div class="field"><label for="clearance">Fit gap (mm)</label><input type="number" id="clearance" step="0.05" min="0" max="1" value="0.15"></div>
+        </div>
+        <p class="hint">Tabs are only added where the art is solid enough to hold them. Other seams are flat, for gluing.</p>
+      </section>
+
+      <section>
+        <span class="label">Separate parts</span>
+        <label class="check" for="keepWhole"><input type="checkbox" id="keepWhole" checked> <span>Print loose letters and shapes whole</span></label>
+        <p class="hint">Any part that isn't attached to the rest and fits your bed stays uncut. Only parts too big for the bed get cut lines.</p>
+      </section>
+
+      <section>
+        <span class="label">Layout <span style="text-transform:none;letter-spacing:0;font-weight:400">(large parts)</span></span>
+        <div class="stepper"><span>Pieces across</span><div class="ctl"><button id="cMinus" aria-label="Fewer columns">−</button><span id="cVal">2</span><button id="cPlus" aria-label="More columns">+</button></div></div>
+        <div class="stepper"><span>Pieces down</span><div class="ctl"><button id="rMinus" aria-label="Fewer rows">−</button><span id="rVal">2</span><button id="rPlus" aria-label="More rows">+</button></div></div>
+        <div class="field"><label>Seams</label>
+          <div class="seg" role="group" aria-label="Seam style">
+            <button id="sFollow" aria-pressed="true">Follow the design</button><button id="sStraight" aria-pressed="false">Straight</button>
+          </div>
+        </div>
+        <button class="btn" id="autoBtn">Find fewest pieces</button>
+        <p class="hint">Following seams run through gaps in the art and cross lines at their narrowest point. Drag the small triangles at the edge of the preview to move a seam.</p>
+      </section>
+
+      <section>
+        <span class="label">Design size</span>
+        <dl class="stats" id="stats"></dl>
+      </section>
+    </aside>
+
+    <div class="stage">
+      <div class="panel">
+        <div class="toolbar">
+          <div class="summary" id="summary">Loading…</div>
+          <button class="btn primary" id="cutBtn" disabled>Split into pieces</button>
+        </div>
+        <div class="progress"><div id="prog"></div></div>
+        <div class="canvasbox" id="box"><canvas id="view"></canvas><div class="overlay" id="overlay">Loading the cutting engine…</div></div>
+        <div class="legend"><span><i></i>Cut line</span><span><i class="sw"></i>Finished piece</span><span><i class="sw" style="background:var(--whole)"></i>Prints whole</span><span><i class="sw" style="background:var(--cut);opacity:.6"></i>Tip kept with the piece it's attached to</span><span>Rows run A, B, C… from the top; columns 1, 2, 3… from the left.</span></div>
+        <div class="msg" id="msg" hidden></div>
+      </div>
+
+      <div class="panel" id="results" hidden style="margin-top:16px">
+        <div class="results-head">
+          <h2 id="resTitle">Pieces</h2>
+          <button class="btn primary" id="dlBtn">Download pieces (.zip)</button>
+        </div>
+        <div class="tablebox"><table>
+          <thead><tr><th>Piece</th><th>Footprint</th><th>Thickness</th><th>On the bed</th><th>Fits</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table></div>
+        <p class="hint" style="padding:10px 14px">Pieces that need an angle are exported already turned, so they drop onto the plate ready to slice. Turn off auto-rotate in Orca's Arrange settings so it keeps the angle.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module">
+const $ = id => document.getElementById(id);
+const MM_IN = 25.4;
+const S = {
+  units:'in', maxMM: 11.75*MM_IN, joint:'puzzle', tabT:8, clear:0.15,
+  wasm:null, model:null, // {tris, W,H,T, manifold, raster}
+  nc:1, nr:1, xs:[], ys:[], tabs:[], pieces:null, fileBase:'mountain-sun', isSample:true,
+  keepWhole:true, big:null, seams:'follow', curveFell:false, // big = the oversized parts that get the cut grid, in their own frame
+};
+
+/* ---------- units ---------- */
+const fmt = (mm, d) => S.units==='in' ? (mm/MM_IN).toFixed(d??2)+' in' : mm.toFixed(d??0)+' mm';
+const fmtPair = (a,b) => S.units==='in' ? `${(a/MM_IN).toFixed(2)} × ${(b/MM_IN).toFixed(2)} in` : `${a.toFixed(0)} × ${b.toFixed(0)} mm`;
+
+/* ---------- engine ---------- */
+async function loadEngine(){
+  const [{default: Module}, bin] = await Promise.all([
+    import('https://cdn.jsdelivr.net/npm/manifold-3d@3.3.2/manifold.js'),
+    fetch('manifold.wasm').then(r => { if(!r.ok) throw new Error('engine file missing'); return r.arrayBuffer(); })
+  ]);
+  const w = await Module({wasmBinary: bin});
+  w.setup();
+  return w;
+}
+
+/* ---------- STL io ---------- */
+function parseSTL(buf){
+  const dv = new DataView(buf);
+  if (buf.byteLength >= 84){
+    const n = dv.getUint32(80, true);
+    if (84 + n*50 === buf.byteLength){
+      const out = new Float32Array(n*9);
+      for (let i=0;i<n;i++){ const o = 84 + i*50 + 12; for (let k=0;k<9;k++) out[i*9+k] = dv.getFloat32(o+k*4, true); }
+      return out;
+    }
+  }
+  const txt = new TextDecoder().decode(buf);
+  const re = /vertex\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)/g; const v=[]; let m;
+  while((m = re.exec(txt))) v.push(+m[1], +m[2], +m[3]);
+  if (!v.length || v.length % 9) throw new Error('This file does not look like an STL.');
+  return Float32Array.from(v);
+}
+function writeSTL(vp, np, tv){
+  const n = tv.length/3, buf = new ArrayBuffer(84 + n*50), dv = new DataView(buf);
+  dv.setUint32(80, n, true);
+  for (let i=0;i<n;i++){
+    const a=tv[i*3]*np, b=tv[i*3+1]*np, c=tv[i*3+2]*np, o=84+i*50;
+    const ux=vp[b]-vp[a], uy=vp[b+1]-vp[a+1], uz=vp[b+2]-vp[a+2], wx=vp[c]-vp[a], wy=vp[c+1]-vp[a+1], wz=vp[c+2]-vp[a+2];
+    let nx=uy*wz-uz*wy, ny=uz*wx-ux*wz, nz=ux*wy-uy*wx; const l=Math.hypot(nx,ny,nz)||1;
+    dv.setFloat32(o,nx/l,true); dv.setFloat32(o+4,ny/l,true); dv.setFloat32(o+8,nz/l,true);
+    [a,b,c].forEach((p,k)=>{ dv.setFloat32(o+12+k*12,vp[p],true); dv.setFloat32(o+16+k*12,vp[p+1],true); dv.setFloat32(o+20+k*12,vp[p+2],true); });
+  }
+  return buf;
+}
+
+/* Lay the art flat (thinnest axis becomes Z) and move it to the origin. */
+function normalize(tris){
+  let mn=[1e30,1e30,1e30], mx=[-1e30,-1e30,-1e30];
+  for (let i=0;i<tris.length;i+=3) for(let k=0;k<3;k++){ const v=tris[i+k]; if(v<mn[k])mn[k]=v; if(v>mx[k])mx[k]=v; }
+  const ext=[0,1,2].map(k=>mx[k]-mn[k]); const thin = ext.indexOf(Math.min(...ext));
+  const out = new Float32Array(tris.length);
+  for (let i=0;i<tris.length;i+=3){
+    let x=tris[i], y=tris[i+1], z=tris[i+2];
+    if (thin===1){ const t=y; y=-z; z=t; }        // rotate about X
+    else if (thin===0){ const t=x; x=z; z=-t; }    // rotate about Y
+    out[i]=x; out[i+1]=y; out[i+2]=z;
+  }
+  mn=[1e30,1e30,1e30]; mx=[-1e30,-1e30,-1e30];
+  for (let i=0;i<out.length;i+=3) for(let k=0;k<3;k++){ const v=out[i+k]; if(v<mn[k])mn[k]=v; if(v>mx[k])mx[k]=v; }
+  for (let i=0;i<out.length;i+=3) for(let k=0;k<3;k++) out[i+k]-=mn[k];
+  return {tris:out, W:mx[0]-mn[0], H:mx[1]-mn[1], T:mx[2]-mn[2]};
+}
+function toManifold(tris){
+  const {Mesh, Manifold} = S.wasm;
+  const map = new Map(), verts=[], idx=[];
+  const nt = tris.length/9;
+  for (let t=0;t<nt;t++){
+    const tri=[];
+    for (let k=0;k<3;k++){
+      const i=t*9+k*3, key=Math.round(tris[i]*1e4)+','+Math.round(tris[i+1]*1e4)+','+Math.round(tris[i+2]*1e4);
+      let v=map.get(key); if (v===undefined){ v=verts.length/3; map.set(key,v); verts.push(tris[i],tris[i+1],tris[i+2]); }
+      tri.push(v);
+    }
+    if (tri[0]!==tri[1] && tri[1]!==tri[2] && tri[0]!==tri[2]) idx.push(...tri);
+  }
+  const mesh = new Mesh({numProp:3, vertProperties:Float32Array.from(verts), triVerts:Uint32Array.from(idx)});
+  mesh.merge();
+  return new Manifold(mesh);
+}
+
+/* ---------- sample design (generated) ---------- */
+function sampleTris(){
+  const {CrossSection} = S.wasm;
+  const W=560, H=360, sw=16;
+  const outer = CrossSection.square([W-60,H-60]).translate([30,30]).offset(30,'Round',2,64);
+  const frame = outer.subtract(outer.offset(-sw,'Round',2,64));
+  const peaks = [[sw-2,sw-2],[120,175],[175,128],[262,262],[338,150],[395,205],[470,118],[W-sw+2,sw-2]];
+  const mtn = new CrossSection([peaks.slice().reverse()]);
+  const mtnLine = mtn.subtract(mtn.offset(-11,'Miter',4));
+  const snow = new CrossSection([[[262,262],[236,222],[252,230],[262,216],[274,230],[287,224]]]);
+  const sun = CrossSection.circle(44,72).subtract(CrossSection.circle(33,72)).translate([430,268]);
+  const ray = CrossSection.square([9,H-sw-312+6]).translate([425.5,312-2]);
+  const lake = CrossSection.square([300,9]).translate([130,58]).offset(3,'Round',2,24);
+  // loose shapes: birds inside the frame and a row of stars under it (separate parts that print whole)
+  const star = (cx,cy,R) => { const p=[]; for(let i=0;i<10;i++){ const a=Math.PI/2+i*Math.PI/5, rr=i%2?R*0.45:R; p.push([cx+rr*Math.cos(a), cy+rr*Math.sin(a)]); } return new CrossSection([p]); };
+  const bird = (cx,cy,s) => new CrossSection([[[cx-s,cy+s*0.5],[cx,cy],[cx+s,cy+s*0.5],[cx+s*0.9,cy+s*0.75],[cx,cy+s*0.35],[cx-s*0.9,cy+s*0.75]]]);
+  const loose = [star(70,-50,30),star(210,-50,30),star(350,-50,30),star(490,-50,30),bird(130,280,24),bird(190,300,18),bird(255,316,14)];
+  let art = CrossSection.union([frame, mtnLine, snow, sun, ray, lake, ...loose]);
+  loose.forEach(o=>o.delete());
+  const m = art.extrude(6);
+  const mesh = m.getMesh(); const np=mesh.numProp, vp=mesh.vertProperties, tv=mesh.triVerts;
+  const out = new Float32Array(tv.length*3);
+  for (let i=0;i<tv.length;i++){ out[i*3]=vp[tv[i]*np]; out[i*3+1]=vp[tv[i]*np+1]; out[i*3+2]=vp[tv[i]*np+2]; }
+  [outer,frame,mtn,mtnLine,snow,sun,ray,lake,art].forEach(o=>o.delete());
+  return {tris:out, manifold:m};
+}
+
+/* ---------- raster (top-down silhouette) ---------- */
+function buildRaster(tris, W, H){
+  const res = Math.max(0.5, Math.max(W,H)/1500);
+  const gw = Math.ceil(W/res)+1, gh = Math.ceil(H/res)+1;
+  const c = document.createElement('canvas'); c.width=gw; c.height=gh;
+  const g = c.getContext('2d'); g.scale(1/res,1/res); g.beginPath();
+  for (let i=0;i<tris.length;i+=9){
+    let ax=tris[i],ay=tris[i+1],bx=tris[i+3],by=tris[i+4],cx=tris[i+6],cy=tris[i+7];
+    const cr=(bx-ax)*(cy-ay)-(by-ay)*(cx-ax); if (Math.abs(cr)<1e-9) continue;
+    if (cr<0){ const tx=bx,ty=by; bx=cx;by=cy;cx=tx;cy=ty; }
+    g.moveTo(ax,ay); g.lineTo(bx,by); g.lineTo(cx,cy); g.closePath();
+  }
+  g.fillStyle='#000'; g.fill('nonzero');
+  const d = g.getImageData(0,0,gw,gh).data, occ = new Uint8Array(gw*gh);
+  for (let i=0;i<occ.length;i++) occ[i] = d[i*4+3]>110 ? 1:0;
+  const colCost=new Float64Array(gw), rowCost=new Float64Array(gh);
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++) if(occ[y*gw+x]){ colCost[x]++; rowCost[y]++; }
+  return {res,gw,gh,occ,colCost,rowCost,canvas:c};
+}
+
+/* ---------- 2D helpers ---------- */
+function hull(pts){
+  pts = pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]); if (pts.length<3) return pts;
+  const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[],up=[];
+  for (const p of pts){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
+  for (let i=pts.length-1;i>=0;i--){ const p=pts[i]; while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p); }
+  lo.pop(); up.pop(); return lo.concat(up);
+}
+/* Smallest square-bed footprint over rotations. Returns angle (deg) that fits, preferring 0. */
+function bestFit(points, M){
+  const h = hull(points); if (!h.length) return {angle:0,w:0,h:0,fits:true};
+  const ext = a => { const c=Math.cos(a*Math.PI/180), s=Math.sin(a*Math.PI/180); let x0=1e30,x1=-1e30,y0=1e30,y1=-1e30;
+    for (const [x,y] of h){ const u=x*c-y*s, v=x*s+y*c; if(u<x0)x0=u; if(u>x1)x1=u; if(v<y0)y0=v; if(v>y1)y1=v; } return [x1-x0,y1-y0]; };
+  const e0 = ext(0); if (Math.max(...e0) <= M) return {angle:0,w:e0[0],h:e0[1],fits:true};
+  // smallest turn that fits (a square bed looks the same every 90°, so -a covers 90-a)
+  for (let a=0.5;a<=45;a+=0.5) for (const t of [a,-a]){ const e=ext(t); if (Math.max(...e)<=M-0.5) return {angle:t,w:e[0],h:e[1],fits:true}; }
+  let best=0, bv=1e30;
+  for (let a=0;a<90;a+=1){ const e=ext(a), v=Math.max(...e); if (v<bv){bv=v;best=a;} }
+  for (let a=best-1;a<=best+1;a+=0.1){ const e=ext(a), v=Math.max(...e); if (v<bv){bv=v;best=a;} }
+  const e=ext(best); return {angle:Math.round(best*10)/10, w:e[0], h:e[1], fits:bv<=M};
+}
+
+/* ---------- tabs ---------- */
+const tabGeo = () => { const T=S.tabT, r=T/2, nl=0.35*T, co=nl+0.75*r; return {T,r,nw:0.55*T,nl,co,depth:co+r}; };
+const tabDepth = () => S.joint==='puzzle' ? tabGeo().depth : 0;
+// A tab is {p:[x,y] on the seam, n:[x,y] unit vector pointing into the piece that receives the knob, own, recv}
+function knobLocal(){ // sample points in knob space (u along n, v across), for material checks
+  const G=tabGeo(), pts=[];
+  for (let u=1;u<=G.nl;u+=1) for (let v=-G.nw/2; v<=G.nw/2+1e-6; v+=1) pts.push([u,v]); // u=0 sits on the seam itself
+  const R=G.r+0.8;
+  for (let u=-R;u<=R;u+=1) for (let v=-R;v<=R;v+=1) if (u*u+v*v<=R*R) pts.push([G.co+u,v]);
+  return pts;
+}
+function knobPts(t){ // outline points (mm) for footprint checks and drawing
+  const G=tabGeo(), pts=[], [nx,ny]=t.n, px=-ny, py=nx;
+  for (let a=0;a<360;a+=30){ const r=a*Math.PI/180; pts.push([G.co+G.r*Math.cos(r), G.r*Math.sin(r)]); }
+  pts.push([0,-G.nw/2],[0,G.nw/2]);
+  return pts.map(([u,v])=>[t.p[0]+nx*u+px*v, t.p[1]+ny*u+py*v]);
+}
+/* Walk every seam and put tabs where the seam crosses solid art that can hold a knob on both sides. */
+function seamTabs(lay){
+  if (S.joint!=='puzzle') return [];
+  const {res,gw,gh,occ}=S.big.raster, G=tabGeo(), lab=lay.labels, nc=lay.nc, loc=knobLocal();
+  const cell=(x,y)=>{ const cx=Math.floor(x/res), cy=Math.floor(y/res); return (cx<0||cy<0||cx>=gw||cy>=gh) ? -1 : cy*gw+cx; };
+  const spacing=70, tabs=[];
+  const seams=[...lay.vpaths.map(p=>({p,col:-1})), ...lay.hpaths.flatMap((col,k)=>col.map(p=>({p,col:k})))];
+  seams.forEach((sm,si)=>{
+    const P=sm.p; if (P.length<2) return;
+    const L=[0]; for (let i=1;i<P.length;i++) L.push(L[i-1]+Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]));
+    const tot=L[L.length-1]; let seg=0;
+    const at=s=>{ s=Math.max(0,Math.min(tot,s)); while(seg>0 && L[seg]>s) seg--; while(seg<P.length-2 && L[seg+1]<s) seg++;
+      const d=L[seg+1]-L[seg]||1, f=(s-L[seg])/d; return [P[seg][0]+(P[seg+1][0]-P[seg][0])*f, P[seg][1]+(P[seg+1][1]-P[seg][1])*f]; };
+    const half=G.r+1, ok=[];
+    for (let s=0;s<=tot;s+=1){
+      const p=at(s), a0=at(s-half), a1=at(s+half); let tx=a1[0]-a0[0], ty=a1[1]-a0[1]; const tl=Math.hypot(tx,ty);
+      if (tl<half) { ok.push(null); continue; } tx/=tl; ty/=tl;
+      // the seam must be close to straight under the knob
+      let straight=true; for (let q=-half;q<=half && straight;q+=1){ const m=at(s+q); if (Math.abs((m[0]-a0[0])*ty-(m[1]-a0[1])*tx)>0.8) straight=false; }
+      if (!straight){ ok.push(null); continue; }
+      const n=[-ty,tx], ia=cell(p[0]-n[0]*2,p[1]-n[1]*2), ib=cell(p[0]+n[0]*2,p[1]+n[1]*2);
+      if (ia<0||ib<0){ ok.push(null); continue; }
+      const A=lab[ia], B=lab[ib];
+      if (A===B || (sm.col>=0 && (A%nc!==sm.col || B%nc!==sm.col))){ ok.push(null); continue; }
+      let good=true;
+      for (const [u,v] of loc){ // knob side must be solid and inside B, mirror side solid and inside A
+        const xb=p[0]+n[0]*u-n[1]*v, yb=p[1]+n[1]*u+n[0]*v, ib2=cell(xb,yb); if (ib2<0||!occ[ib2]||lab[ib2]!==B){ good=false; break; }
+        const xa=p[0]-n[0]*u-n[1]*v, ya=p[1]-n[1]*u+n[0]*v, ia2=cell(xa,ya); if (ia2<0||!occ[ia2]||lab[ia2]!==A){ good=false; break; }
+      }
+      ok.push(good ? {p,n,A,B} : null);
+    }
+    let i=0, idx=0;
+    while (i<ok.length){
+      if (!ok[i]){ i++; continue; } let j=i; while (j<ok.length && ok[j]) j++;
+      const len=j-1-i, cnt=Math.floor(len/spacing)+1;
+      for (let q=0;q<cnt;q++){
+        const o=ok[cnt===1 ? Math.round((i+j-1)/2) : Math.round(i+q*len/(cnt-1))];
+        const flip=(idx+si)%2===1; idx++;
+        tabs.push(flip ? {p:o.p, n:[-o.n[0],-o.n[1]], own:o.B, recv:o.A} : {p:o.p, n:o.n, own:o.A, recv:o.B});
+      }
+      i=j;
+    }
+  });
+  return tabs;
+}
+
+/* ---------- layout search ---------- */
+function placeCuts(cost, N, n, Lc, Mc){
+  if (n<=1) return [];
+  if (N > n*Lc || N < n*Mc) return null;
+  let prev = new Float64Array(N+1).fill(Infinity); const back=[];
+  for (let p=Mc;p<=Math.min(Lc,N);p++) prev[p]=cost[p]+0.05*Math.abs(p-N/n);
+  for (let j=1;j<n-1;j++){
+    const cur=new Float64Array(N+1).fill(Infinity), bk=new Int32Array(N+1).fill(-1);
+    const dq=[]; let head=0; let qNext=0;
+    for (let p=0;p<=N;p++){
+      const hiQ=p-Mc; while(qNext<=hiQ){ if(prev[qNext]<Infinity){ while(dq.length>head && prev[dq[dq.length-1]]>=prev[qNext]) dq.pop(); dq.push(qNext);} qNext++; }
+      while(dq.length>head && dq[head]<p-Lc) head++;
+      if (dq.length>head){ const q=dq[head]; cur[p]=prev[q]+cost[p]+0.05*Math.abs(p-(j+1)*N/n); bk[p]=q; }
+    }
+    back.push(bk); prev=cur;
+  }
+  let best=-1, bv=Infinity;
+  for (let p=Math.max(0,N-Lc);p<=N-Mc;p++) if(prev[p]<bv){bv=prev[p];best=p;}
+  if (best<0) return null;
+  const cuts=[best]; for (let j=back.length-1;j>=0;j--){ cuts.unshift(back[j][cuts[0]]); }
+  return cuts;
+}
+/* ---------- piece maps and seams ---------- */
+// lay = {curved, nc, nr, vpaths, hpaths[col][row], labels}. labels gives every raster cell its piece index (row*nc + col).
+const SEAM_M = 60; // how far seam polygons reach past the art
+function straightLayout(xs, ys){
+  const B=S.big, {res,gw,gh}=B.raster, nc=xs.length+1, nr=ys.length+1, labels=new Int16Array(gw*gh);
+  const colT=new Int16Array(gw); for (let x=0;x<gw;x++){ const v=(x+0.5)*res; let c=0; while(c<xs.length && v>=xs[c]) c++; colT[x]=c; }
+  for (let y=0;y<gh;y++){ const v=(y+0.5)*res; let r=0; while(r<ys.length && v>=ys[r]) r++; const o=y*gw; for(let x=0;x<gw;x++) labels[o+x]=r*nc+colT[x]; }
+  const xb=[0,...xs,B.W];
+  return {curved:false, nc, nr, labels,
+    vpaths: xs.map(x=>[[x,0],[x,B.H]]),
+    hpaths: [...Array(nc)].map((_,k)=>ys.map(y=>[[xb[k],y],[xb[k+1],y]]))};
+}
+/* Cheapest route across a window of the raster (Dijkstra, 8 directions). */
+function cheapestPath(x0,x1,y0,y1,cost,isStart,isEnd){
+  const {gw}=S.big.raster, dw=x1-x0+1, dh=y1-y0+1, N=dw*dh;
+  const dist=new Float32Array(N).fill(Infinity), prev=new Int32Array(N).fill(-1), done=new Uint8Array(N);
+  let hk=new Float64Array(1024), hv=new Int32Array(1024), hn=0;
+  const push=(k,v)=>{ if(hn>=hk.length){ const a=new Float64Array(hk.length*2); a.set(hk); hk=a; const b=new Int32Array(hv.length*2); b.set(hv); hv=b; }
+    let i=hn++; while(i>0){ const p=(i-1)>>1; if(hk[p]<=k) break; hk[i]=hk[p]; hv[i]=hv[p]; i=p; } hk[i]=k; hv[i]=v; };
+  const pop=()=>{ const v=hv[0], lk=hk[--hn], lv=hv[hn]; let i=0; for(;;){ let c=2*i+1; if(c>=hn) break; if(c+1<hn && hk[c+1]<hk[c]) c++; if(hk[c]>=lk) break; hk[i]=hk[c]; hv[i]=hv[c]; i=c; } hk[i]=lk; hv[i]=lv; return v; };
+  for (let y=y0;y<=y1;y++) for (let x=x0;x<=x1;x++) if (isStart(x,y)){ const l=(y-y0)*dw+(x-x0); dist[l]=cost(x,y); push(dist[l],l); }
+  let end=-1;
+  while (hn){
+    const l=pop(); if (done[l]) continue; done[l]=1;
+    const x=l%dw+x0, y=((l/dw)|0)+y0; if (isEnd(x,y)){ end=l; break; }
+    for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){ if(!dx&&!dy) continue;
+      const nx=x+dx, ny=y+dy; if (nx<x0||nx>x1||ny<y0||ny>y1) continue; const m=(ny-y0)*dw+(nx-x0); if (done[m]) continue;
+      const d=dist[l]+cost(nx,ny)*((dx&&dy)?1.4142:1); if (d<dist[m]){ dist[m]=d; prev[m]=l; push(d,m); } }
+  }
+  if (end<0) return null;
+  const out=[]; for (let l=end;l>=0;l=prev[l]) out.push([l%dw+x0, ((l/dw)|0)+y0]); return out.reverse();
+}
+function simplifyPath(P, eps){ // Ramer–Douglas–Peucker
+  if (P.length<3) return P; const keep=new Uint8Array(P.length); keep[0]=keep[P.length-1]=1; const st=[[0,P.length-1]];
+  while (st.length){ const [a,b]=st.pop(); let md=0, mi=-1; const [ax,ay]=P[a], [bx,by]=P[b], L=Math.hypot(bx-ax,by-ay)||1;
+    for (let i=a+1;i<b;i++){ const d=Math.abs((P[i][0]-ax)*(by-ay)-(P[i][1]-ay)*(bx-ax))/L; if(d>md){md=d;mi=i;} }
+    if (md>eps){ keep[mi]=1; st.push([a,mi],[mi,b]); } }
+  return P.filter((_,i)=>keep[i]);
+}
+const leftOfPoly = p => { const M=SEAM_M, H=S.big.H; return [[-M,-M],[p[0][0],-M],...p,[p[p.length-1][0],H+M],[-M,H+M]]; };
+const belowPoly  = p => { const M=SEAM_M, W=S.big.W; return [[-M,-M],[W+M,-M],[W+M,p[p.length-1][1]],...p.slice().reverse(),[-M,p[0][1]]]; };
+let maskCanvas=null;
+function polyMask(poly){
+  const {res,gw,gh}=S.big.raster;
+  if (!maskCanvas || maskCanvas.width!==gw || maskCanvas.height!==gh){ maskCanvas=document.createElement('canvas'); maskCanvas.width=gw; maskCanvas.height=gh; }
+  const g=maskCanvas.getContext('2d', {willReadFrequently:true}); g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,gw,gh); g.scale(1/res,1/res);
+  g.beginPath(); poly.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y)); g.closePath(); g.fillStyle='#000'; g.fill('nonzero');
+  const d=g.getImageData(0,0,gw,gh).data, m=new Uint8Array(gw*gh); for (let i=0;i<m.length;i++) m[i]=d[i*4+3]>127?1:0; return m;
+}
+/* Seams that follow the design: each one may wander up to `half` mm from its straight position,
+   running through gaps and crossing solid lines where they are narrowest. */
+function curvedLayout(xs, ys, half){
+  const B=S.big, {res,gw,gh,occ}=B.raster, nc=xs.length+1, nr=ys.length+1;
+  const room = (cuts,len) => { let g=1e9; const b=[0,...cuts,len]; for (let i=1;i<b.length;i++) g=Math.min(g,b[i]-b[i-1]); return Math.max(0,Math.min(half,g/2-4)); };
+  const hv=Math.round(room(xs,B.W)/res), hh=Math.round(room(ys,B.H)/res), K=25;
+  const near=new Uint8Array(gw*gh); // cells touching the art cost a little more, so seams keep a hair of clearance
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++) if (occ[y*gw+x]) for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){ const nx=x+dx, ny=y+dy; if(nx>=0&&ny>=0&&nx<gw&&ny<gh) near[ny*gw+nx]=1; }
+  const cellCost = i => occ[i] ? K : (near[i] ? 3 : 1);
+  const toMM = P => simplifyPath(P.map(([x,y])=>[(x+0.5)*res,(y+0.5)*res]), 0.35);
+  const vpaths=[];
+  for (const x of xs){
+    const c=Math.round(x/res), x0=Math.max(0,c-hv), x1=Math.min(gw-1,c+hv);
+    const P=cheapestPath(x0,x1,0,gh-1,(px,py)=>cellCost(py*gw+px)+0.03*Math.abs(px-c),(px,py)=>py===0,(px,py)=>py===gh-1);
+    if (!P) return null; vpaths.push(toMM(P));
+  }
+  const col=new Int16Array(gw*gh);
+  for (const p of vpaths){ const m=polyMask(leftOfPoly(p)); for (let i=0;i<m.length;i++) if(!m[i]) col[i]++; }
+  const labels=new Int16Array(gw*gh), hpaths=[];
+  for (let k=0;k<nc;k++){
+    let bx0=gw, bx1=-1; for (let i=0;i<col.length;i++) if (col[i]===k){ const x=i%gw; if(x<bx0)bx0=x; if(x>bx1)bx1=x; }
+    if (bx1<0) return null; bx0=Math.max(0,bx0-1); bx1=Math.min(gw-1,bx1+1);
+    const paths=[];
+    for (const y of ys){
+      const c=Math.round(y/res), y0=Math.max(0,c-hh), y1=Math.min(gh-1,c+hh);
+      const P=cheapestPath(bx0,bx1,y0,y1,(px,py)=>{ const i=py*gw+px; return (col[i]===k ? cellCost(i) : 0.3)+0.03*Math.abs(py-c); },(px)=>px===bx0,(px)=>px===bx1);
+      if (!P) return null; paths.push(toMM(P));
+    }
+    const row=new Int16Array(gw*gh);
+    for (const p of paths){ const m=polyMask(belowPoly(p)); for (let i=0;i<m.length;i++) if(!m[i]) row[i]++; }
+    for (let i=0;i<labels.length;i++) if (col[i]===k) labels[i]=row[i]*nc+k;
+    hpaths.push(paths);
+  }
+  return {curved:true, nc, nr, vpaths, hpaths, labels};
+}
+
+/* Find small bits a cut would leave stranded (a spike tip poking across a seam).
+   Each one is handed to the piece it is attached to, so the seam steps around it. */
+const FRAG_MAX_MM2 = 1500; // about 2.3 square inches
+function findFragments(lay){
+  const B=S.big, {res,gw,gh,occ}=B.raster, tile=lay.labels;
+  const cap=Math.round(FRAG_MAX_MM2/(res*res)), lab=new Int32Array(gw*gh), comps=[null];
+  const flood = seed => {
+    if (!occ[seed] || lab[seed]!==0) return;
+    const t=tile[seed], list=[], q=[seed]; lab[seed]=-2; let large=false;
+    while (q.length){
+      const i=q.pop(); list.push(i); if (list.length>cap){ large=true; break; }
+      const x=i%gw, y=(i/gw)|0;
+      for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx=x+dx, ny=y+dy; if (nx<0||ny<0||nx>=gw||ny>=gh) continue; const n=ny*gw+nx;
+        if (!occ[n] || tile[n]!==t) continue;
+        if (lab[n]===-1){ large=true; continue; }
+        if (lab[n]===0){ lab[n]=-2; q.push(n); }
+      }
+    }
+    if (large){ for (const i of list) lab[i]=-1; for (const i of q) lab[i]=-1; return; }
+    const id=comps.length; for (const i of list) lab[i]=id; comps.push({cells:list, tile:t});
+  };
+  // seed along the seams: that is where stranded bits start
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x;
+    if ((x+1<gw && tile[i+1]!==tile[i]) || (y+1<gh && tile[i+gw]!==tile[i])){ flood(i); if(x+1<gw) flood(i+1); if(y+1<gh) flood(i+gw); } }
+  const moved=new Int16Array(gw*gh), frags=[];
+  for (let k=1;k<comps.length;k++){
+    const f=comps[k], contact=new Map();
+    for (const i of f.cells){
+      const x=i%gw, y=(i/gw)|0;
+      for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){
+        const nx=x+dx, ny=y+dy; if (nx<0||ny<0||nx>=gw||ny>=gh) continue; const n=ny*gw+nx;
+        if (!occ[n]) continue; const t=tile[n]; if (t===f.tile) continue;
+        if (lab[n]===0) flood(n);
+        const big = lab[n]===-1 || (lab[n]>0 && comps[lab[n]].cells.length>=2*f.cells.length);
+        if (big) contact.set(t,(contact.get(t)||0)+1);
+      }
+    }
+    if (!contact.size) continue;
+    let to=-1, best=0; for (const [t,v] of contact) if (v>best){best=v;to=t;}
+    const runs=[]; const sorted=f.cells.slice().sort((a,b)=>a-b);
+    for (let j=0;j<sorted.length;){ let e=j; while(e+1<sorted.length && sorted[e+1]===sorted[e]+1 && ((sorted[e+1]/gw)|0)===((sorted[j]/gw)|0)) e++;
+      runs.push([sorted[j]%gw, (sorted[j]/gw)|0, sorted[e]%gw]); j=e+1; }
+    for (const i of f.cells) moved[i]=to+1;
+    frags.push({from:f.tile, to, runs, area:f.cells.length*res*res});
+  }
+  return {frags, moved};
+}
+function tileFootprints(lay, tabs, fr){
+  const {res,gw,gh,occ}=S.big.raster, nT=lay.nc*lay.nr, mv=fr.moved, lab=lay.labels;
+  const mn=new Int32Array(nT*gh).fill(1<<30), mx=new Int32Array(nT*gh).fill(-1), sx=new Float64Array(nT), sy=new Float64Array(nT), cnt=new Float64Array(nT);
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x; if (!occ[i]) continue;
+    const t = mv[i] ? mv[i]-1 : lab[i], k=t*gh+y; if (x<mn[k]) mn[k]=x; if (x>mx[k]) mx[k]=x; sx[t]+=x; sy[t]+=y; cnt[t]++; }
+  const out=[];
+  for (let t=0;t<nT;t++){
+    const pts=[]; for (let y=0;y<gh;y++){ const k=t*gh+y; if (mx[k]<0) continue; const a=mn[k], b=mx[k];
+      pts.push([a*res,y*res],[(b+1)*res,y*res],[a*res,(y+1)*res],[(b+1)*res,(y+1)*res]); }
+    out.push({t, c:t%lay.nc, r:(t/lay.nc)|0, pts, cx: cnt[t]? (sx[t]/cnt[t]+0.5)*res : null, cy: cnt[t]? (sy[t]/cnt[t]+0.5)*res : null});
+  }
+  for (const tb of tabs) if (out[tb.own]) out[tb.own].pts.push(...knobPts(tb));
+  return out;
+}
+/* Drop any tab whose knob would land on a bit that changes hands. */
+function tabsClearOf(tabs, fr){
+  if (!fr.frags.length) return tabs;
+  const {res,gw,gh}=S.big.raster, d=Math.ceil((tabGeo().depth+1)/res);
+  return tabs.filter(t=>{
+    const px=Math.round(t.p[0]/res), py=Math.round(t.p[1]/res);
+    for (let y=Math.max(0,py-d);y<=Math.min(gh-1,py+d);y++) for (let x=Math.max(0,px-d);x<=Math.min(gw-1,px+d);x++) if (fr.moved[y*gw+x]) return false;
+    return true;
+  });
+}
+function evaluate(xs, ys, half){
+  const lay = half ? curvedLayout(xs,ys,half) : straightLayout(xs,ys);
+  if (!lay) return null;
+  const fr=findFragments(lay), tabs=tabsClearOf(seamTabs(lay),fr), fp=tileFootprints(lay,tabs,fr), M=S.maxMM;
+  const fits=fp.map(f=>({...f, fit: f.pts.length? bestFit(f.pts,M) : {angle:0,w:0,h:0,fits:true,empty:true}}));
+  return {lay, tabs, frags:fr.frags, tiles:fits, ok: fits.every(f=>f.fit.fits)};
+}
+function searchLayout(fixed){
+  const m=S.big, R=m.raster, M=S.maxMM, d=tabDepth();
+  const strict=M-2*d-0.5, diag=M*Math.SQRT2-2*d-1, Mc=Math.round(20/R.res);
+  const W=m.W, H=m.H, gwN=R.gw-1, ghN=R.gh-1;
+  const ncS=Math.max(1,Math.ceil(W/strict)), nrS=Math.max(1,Math.ceil(H/strict));
+  let cands=[];
+  if (fixed) cands=[[fixed[0],fixed[1]]];
+  else { for(let c=1;c<=ncS+2;c++) for(let r=1;r<=nrS+2;r++) if(c*r<=ncS*nrS) cands.push([c,r]); cands.sort((a,b)=>a[0]*a[1]-b[0]*b[1]); }
+  const Ls = (len,n)=>{ if(n===1) return [len]; const lo=len/n+1, hi=Math.min(diag, len); const v=[]; if (strict>=lo) v.push(strict);
+    for(let k=0;k<=5;k++){ const L=lo+(hi-lo)*k/5; if(L>=lo) v.push(L);} return [...new Set(v.map(x=>Math.round(x)))]; };
+  const memo=new Map();
+  const cutsFor=(axis,n,L)=>{ const key=axis+n+'_'+L; if(memo.has(key)) return memo.get(key);
+    const cost=axis==='x'?R.colCost:R.rowCost, N=axis==='x'?gwN:ghN;
+    const c=placeCuts(cost,N,n,Math.floor(L/R.res),Mc); const v=c?c.map(p=>p*R.res):null; memo.set(key,v); return v; };
+  // quick fit check (no tabs or tips, bed shrunk by one tab depth), then a full check on the best few
+  const qmemo=new Map(), noMove={moved:[]};
+  const quick=(xs,ys)=>{ const k=xs.join()+'|'+ys.join(); if (qmemo.has(k)) return qmemo.get(k);
+    const fp=tileFootprints(straightLayout(xs,ys),[],noMove), ok=fp.every(f=>!f.pts.length || bestFit(f.pts,M-d).fits); qmemo.set(k,ok); return ok; };
+  let best=null;
+  const levels=[...new Set(cands.map(([c,r])=>c*r))];
+  for (const lv of levels){
+    const pool=[], seen=new Set();
+    for (const [nc,nr] of cands.filter(([c,r])=>c*r===lv))
+      for (const Lx of Ls(W,nc)) for (const Ly of Ls(H,nr)){
+        const xs=cutsFor('x',nc,Lx), ys=cutsFor('y',nr,Ly); if(!xs||!ys) continue;
+        const k=xs.join()+'|'+ys.join(); if (seen.has(k)) continue; seen.add(k);
+        if (!quick(xs,ys)) continue;
+        const seam = xs.reduce((s,x)=>s+R.colCost[Math.round(x/R.res)]*R.res,0) + ys.reduce((s,y)=>s+R.rowCost[Math.round(y/R.res)]*R.res,0);
+        pool.push({nc,nr,xs,ys,seam});
+      }
+    pool.sort((a,b)=>a.seam-b.seam);
+    for (const c of pool.slice(0,6)){ const ev=evaluate(c.xs,c.ys); if (ev.ok){ best={...c,ev}; break; } }
+    if (best) break;
+  }
+  if (!best && fixed){ // fall back to even spacing
+    const [nc,nr]=fixed; const xs=[...Array(nc-1)].map((_,i)=>W*(i+1)/nc), ys=[...Array(nr-1)].map((_,i)=>H*(i+1)/nr);
+    best={nc,nr,xs,ys,ev:evaluate(xs,ys)};
+  }
+  if (!best) return searchLayout([ncS+1,nrS+1]);
+  return best;
+}
+/* Swap the straight cuts for design-following seams when every piece still fits. */
+function finishLayout(){
+  S.curveFell=false;
+  if (S.seams==='follow' && S.big){
+    let got=null; for (const h of [40,22]){ const ev=evaluate(S.xs,S.ys,h); if (ev && ev.ok){ got=ev; break; } }
+    if (got) S.ev=got; else S.curveFell=true;
+  }
+  S.tabs=S.ev.tabs; S.pieces=null; seamKey=''; refresh();
+}
+function applyLayout(L){ S.nc=L.nc; S.nr=L.nr; S.xs=L.xs; S.ys=L.ys; S.ev=L.ev; finishLayout(); }
+/* Sort parts into "prints whole" and "needs splitting"; the oversized ones get one shared cut grid. */
+function rebuildBig(){
+  const m=S.model, M=S.maxMM;
+  for (const p of m.parts){ p.fit=bestFit(p.hull,M); p.whole = S.keepWhole && p.fit.fits; }
+  if (m.parts.length>1 && !S.keepWhole) m.parts.forEach(p=>p.whole=false);
+  if (m.parts.length===1) m.parts[0].whole = m.parts[0].fit.fits;
+  let k=0; for (const p of m.parts) if (p.whole) p.name='P'+(++k);
+  const key = m.parts.map(p=>p.whole?1:0).join('');
+  if (S.big && S.big.key===key) return;
+  if (S.big) S.big.manifold.delete();
+  S.big=null; layerKey='';
+  const bigs=m.parts.filter(p=>!p.whole); if(!bigs.length) return;
+  let x0=1e30,y0=1e30,x1=-1e30,y1=-1e30;
+  for (const p of bigs){ x0=Math.min(x0,p.bb.min[0]); y0=Math.min(y0,p.bb.min[1]); x1=Math.max(x1,p.bb.max[0]); y1=Math.max(y1,p.bb.max[1]); }
+  const comp = S.wasm.Manifold.compose(bigs.map(p=>p.m)), mf = comp.translate([-x0,-y0,0]); comp.delete();
+  const mesh=mf.getMesh(), np=mesh.numProp, vp=mesh.vertProperties, tv=mesh.triVerts, tris=new Float32Array(tv.length*3);
+  for (let i=0;i<tv.length;i++){ tris[i*3]=vp[tv[i]*np]; tris[i*3+1]=vp[tv[i]*np+1]; tris[i*3+2]=vp[tv[i]*np+2]; }
+  const W=x1-x0, H=y1-y0;
+  S.big={key, manifold:mf, W, H, T:m.T, ox:x0, oy:y0, raster:buildRaster(tris,W,H), count:bigs.length};
+}
+/* Seam planning takes a moment on big designs: say so, then do the work on the next frame. */
+let busyT=0;
+function busy(fn){ $('summary').innerHTML='Planning seams…'; clearTimeout(busyT); busyT=setTimeout(fn,30); }
+function relayout(fixed){ if(!S.model) return; busy(()=>relayoutNow(fixed)); }
+function relayoutNow(fixed){
+  if(!S.model) return;
+  rebuildBig();
+  if (!S.big){ S.nc=1; S.nr=1; S.xs=[]; S.ys=[]; S.ev=null; S.tabs=[]; S.pieces=null; refresh(); return; }
+  applyLayout(searchLayout(fixed));
+}
+function reevaluate(){ busy(()=>{ S.ev=evaluate(S.xs,S.ys); finishLayout(); }); }
+
+/* ---------- cutting ---------- */
+const label = (c,r) => String.fromCharCode(65 + (S.nr-1-r)) + (c+1);
+function tileRegions(lay){ // one 2D outline per piece, indexed row*nc + col
+  const {CrossSection}=S.wasm, B=S.big, M=SEAM_M, nc=lay.nc, nr=lay.nr, out=[];
+  const all=()=>CrossSection.square([B.W+2*M,B.H+2*M]).translate([-M,-M]);
+  const left=lay.vpaths.map(p=>new CrossSection([leftOfPoly(p)]));
+  for (let r=0;r<nr;r++) for (let c=0;c<nc;c++) out.push(null);
+  for (let c=0;c<nc;c++){
+    let colR = c<nc-1 ? left[c].translate([0,0]) : all();
+    if (c>0){ const n=colR.subtract(left[c-1]); colR.delete(); colR=n; }
+    const below=lay.hpaths[c].map(p=>new CrossSection([belowPoly(p)]));
+    for (let r=0;r<nr;r++){
+      let band = r<nr-1 ? colR.intersect(below[r]) : colR.intersect(all());
+      if (r>0){ const n=band.subtract(below[r-1]); band.delete(); band=n; }
+      out[r*nc+c]=band;
+    }
+    below.forEach(b=>b.delete()); colR.delete();
+  }
+  left.forEach(l=>l.delete());
+  return out;
+}
+async function cutAll(){
+  if (!S.big || !S.ev) return [];
+  const {CrossSection} = S.wasm, m=S.big, G=tabGeo(), lay=S.ev.lay;
+  const knobCS = t => {
+    const neck=CrossSection.square([G.nl+0.6, G.nw]).translate([-0.6,-G.nw/2]), circ=CrossSection.circle(G.r,48).translate([G.co,0]);
+    const k=neck.add(circ), kr=k.rotate(Math.atan2(t.n[1],t.n[0])*180/Math.PI), kt=kr.translate(t.p);
+    [neck,circ,k,kr].forEach(o=>o.delete()); return kt;
+  };
+  const res=m.raster.res, e=0.5*res;
+  const fcs=(S.ev.frags||[]).map(f=>{ const sq=f.runs.map(([x0,y,x1])=>CrossSection.square([(x1-x0+1)*res+2*e, res+2*e]).translate([x0*res-e, y*res-e]));
+    const cs=CrossSection.union(sq); sq.forEach(s=>s.delete()); return {from:f.from, to:f.to, cs}; });
+  const regions=tileRegions(lay);
+  const out=[]; const total=S.nc*S.nr; let done=0;
+  for (let r=0;r<S.nr;r++) for (let c=0;c<S.nc;c++){
+    const t=r*S.nc+c; let reg=regions[t];
+    for (const tb of S.tabs){
+      if (tb.own!==t && tb.recv!==t) continue;
+      const k=knobCS(tb), next = tb.own===t ? reg.add(k) : reg.subtract(k); reg.delete(); k.delete(); reg=next;
+    }
+    for (const f of fcs){ if (f.to!==t && f.from!==t) continue; const next = f.to===t ? reg.add(f.cs) : reg.subtract(f.cs); reg.delete(); reg=next; }
+    if (S.clear>0){ const o=reg.offset(-S.clear/2,'Round',2,32); reg.delete(); reg=o; }
+    const prism = reg.extrude(m.T+4).translate([0,0,-2]);
+    let piece = m.manifold.intersect(prism);
+    reg.delete(); prism.delete();
+    { // drop slivers under 1.5 mm left along a seam
+      const bits=piece.decompose(), keep=bits.filter(b=>{ const q=b.boundingBox(); return Math.max(q.max[0]-q.min[0],q.max[1]-q.min[1])>=1.5; });
+      if (keep.length<bits.length){ piece.delete(); piece=S.wasm.Manifold.compose(keep); }
+      bits.forEach(b=>b.delete());
+    }
+    if (!piece.isEmpty()){
+      const mesh=piece.getMesh(), np=mesh.numProp, vp=mesh.vertProperties, tv=mesh.triVerts;
+      const pts=[]; for (let i=0;i<vp.length;i+=np) pts.push([vp[i],vp[i+1]]);
+      const fit=bestFit(pts,S.maxMM);
+      const bb=piece.boundingBox();
+      out.push({c,r,name:label(c,r),vp:Float32Array.from(vp),np,tv:Uint32Array.from(tv),fit,
+        w:bb.max[0]-bb.min[0], h:bb.max[1]-bb.min[1], t:bb.max[2]-bb.min[2], parts:piece.decompose().map(p=>{p.delete();return 1;}).length});
+    }
+    piece.delete();
+    done++; $('prog').style.width=(100*done/total)+'%';
+    await new Promise(res=>setTimeout(res,0));
+  }
+  fcs.forEach(f=>f.cs.delete());
+  return out;
+}
+function exportPiece(p){
+  // rotate by the fit angle around Z and set the piece on the origin
+  const a=p.fit.angle*Math.PI/180, c=Math.cos(a), s=Math.sin(a), np=p.np, vp=p.vp;
+  const out=new Float32Array(vp.length/np*3); let mn=[1e30,1e30,1e30];
+  for (let i=0,j=0;i<vp.length;i+=np,j+=3){ const x=vp[i],y=vp[i+1]; out[j]=x*c-y*s; out[j+1]=x*s+y*c; out[j+2]=vp[i+2];
+    for(let k=0;k<3;k++) if(out[j+k]<mn[k]) mn[k]=out[j+k]; }
+  for (let j=0;j<out.length;j+=3) for(let k=0;k<3;k++) out[j+k]-=mn[k];
+  return writeSTL(out,3,p.tv);
+}
+
+/* ---------- drawing ---------- */
+const cv=$('view'), ctx=cv.getContext('2d'); let view={sc:1,ox:0,oy:0};
+const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let layer=null, layerKey='';
+function pathTris(g, vp, np, tv, dx, dy){
+  for (let i=0;i<tv.length;i+=3){ let a=tv[i]*np,b=tv[i+1]*np,c=tv[i+2]*np;
+    const cr=(vp[b]-vp[a])*(vp[c+1]-vp[a+1])-(vp[b+1]-vp[a+1])*(vp[c]-vp[a]); if(Math.abs(cr)<1e-9) continue; if(cr<0){const t=b;b=c;c=t;}
+    g.moveTo(vp[a]+dx,vp[a+1]+dy); g.lineTo(vp[b]+dx,vp[b+1]+dy); g.lineTo(vp[c]+dx,vp[c+1]+dy); g.closePath(); }
+}
+/* Silhouette of the design at model resolution: parts that print whole in one tone, the part to split in another. */
+function getLayer(){
+  const m=S.model, key=[tok('--solid'),tok('--whole'),S.big?.key??'none',!!S.pieces].join('|');
+  if (layer && layerKey===key) return layer;
+  const res=Math.max(0.5,Math.max(m.W,m.H)/1500), gw=Math.ceil(m.W/res)+1, gh=Math.ceil(m.H/res)+1;
+  const c=document.createElement('canvas'); c.width=gw; c.height=gh; const g=c.getContext('2d'); g.scale(1/res,1/res);
+  for (const whole of [false,true]){
+    if (!whole && S.pieces) continue;
+    g.beginPath(); let any=false;
+    for (const p of m.parts) if (p.whole===whole){ pathTris(g,p.vp,p.np,p.tv,0,0); any=true; }
+    if (any){ g.fillStyle=tok(whole?'--whole':'--solid'); g.fill('nonzero'); }
+  }
+  layer={c,res,gw,gh}; layerKey=key; return layer;
+}
+/* Seam lines drawn from the piece map, so straight and design-following seams render the same way. */
+let seamCanvas=null, seamKey='';
+function seamLayer(k){
+  const B=S.big, {gw,gh}=B.raster, lab=S.ev.lay.labels, key=[k,tok('--cut'),S.ev.lay.curved,S.xs.join(),S.ys.join(),S.ev.tabs.length].join('|');
+  if (seamCanvas && seamKey===key) return seamCanvas;
+  const edge=new Uint8Array(gw*gh);
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x; if ((x+1<gw && lab[i+1]!==lab[i]) || (y+1<gh && lab[i+gw]!==lab[i])) edge[i]=1; }
+  const c=document.createElement('canvas'); c.width=gw; c.height=gh; const g=c.getContext('2d'), img=g.createImageData(gw,gh);
+  const col=tok('--cut'), tmp=document.createElement('canvas').getContext('2d'); tmp.fillStyle=col; tmp.fillRect(0,0,1,1); const [cr,cg,cb]=tmp.getImageData(0,0,1,1).data;
+  const h=Math.floor(k/2);
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++) if (edge[y*gw+x]) for (let dy=-h;dy<=k-1-h;dy++) for (let dx=-h;dx<=k-1-h;dx++){
+    const nx=x+dx, ny=y+dy; if(nx<0||ny<0||nx>=gw||ny>=gh) continue; const o=(ny*gw+nx)*4; img.data[o]=cr; img.data[o+1]=cg; img.data[o+2]=cb; img.data[o+3]=255; }
+  g.putImageData(img,0,0); seamCanvas=c; seamKey=key; return c;
+}
+function draw(){
+  const box=$('box'), dpr=window.devicePixelRatio||1, Wc=box.clientWidth, Hc=box.clientHeight;
+  cv.width=Math.round(Wc*dpr); cv.height=Math.round(Hc*dpr); ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle=tok('--plate'); ctx.fillRect(0,0,Wc,Hc);
+  const m=S.model; if(!m) return;
+  const pad=36, sc=Math.min((Wc-2*pad)/m.W,(Hc-2*pad)/m.H); view={sc, ox:(Wc-m.W*sc)/2, oy:(Hc+m.H*sc)/2};
+  const X=x=>view.ox+x*sc, Y=y=>view.oy-y*sc;
+  const B=S.big, bx=B?B.ox:0, by=B?B.oy:0, BX=x=>X(x+bx), BY=y=>Y(y+by);
+  // 2-inch (or 50 mm) grid
+  ctx.strokeStyle=tok('--grid'); ctx.lineWidth=1; const step = S.units==='in'? MM_IN*2 : 50;
+  for (let x=0;x<=m.W+0.1;x+=step){ ctx.beginPath(); ctx.moveTo(X(x),Y(0)); ctx.lineTo(X(x),Y(m.H)); ctx.stroke(); }
+  for (let y=0;y<=m.H+0.1;y+=step){ ctx.beginPath(); ctx.moveTo(X(0),Y(y)); ctx.lineTo(X(m.W),Y(y)); ctx.stroke(); }
+  const L=getLayer();
+  ctx.save(); ctx.translate(view.ox,view.oy); ctx.scale(sc,-sc); ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(L.c,0,0,L.gw*L.res,L.gh*L.res);
+  if (S.pieces) for (const p of S.pieces){ ctx.fillStyle=(p.c+p.r)%2?tok('--piece-b'):tok('--piece-a'); ctx.beginPath(); pathTris(ctx,p.vp,p.np,p.tv,bx,by); ctx.fill('nonzero'); }
+  ctx.restore();
+  ctx.font='600 12px "Barlow Semi Condensed", sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  // whole-part labels
+  for (const p of m.parts) if (p.whole && Math.max(p.w,p.h)*sc>22){
+    const cx=X(p.cx), cy=Y(p.cy), txt=p.name+(p.fit.angle?` ↻${Math.round(p.fit.angle)}°`:''), w=ctx.measureText(txt).width+10;
+    ctx.fillStyle=tok('--panel'); ctx.globalAlpha=.85; ctx.beginPath(); ctx.roundRect(cx-w/2,cy-9,w,18,4); ctx.fill(); ctx.globalAlpha=1;
+    ctx.fillStyle=tok('--muted'); ctx.fillText(txt,cx,cy+1);
+  }
+  if (!B) return;
+  // outline of the area that gets cut
+  ctx.strokeStyle=tok('--muted'); ctx.lineWidth=1; ctx.setLineDash([3,4]); ctx.strokeRect(BX(0),BY(B.H),B.W*sc,B.H*sc); ctx.setLineDash([]);
+  if (drag || !S.ev){ // while dragging, show the straight guide; the seam is re-routed on release
+    ctx.strokeStyle=tok('--cut'); ctx.lineWidth=2; ctx.setLineDash([6,5]);
+    S.xs.forEach(x=>{ ctx.beginPath(); ctx.moveTo(BX(x),BY(-6)); ctx.lineTo(BX(x),BY(B.H+6)); ctx.stroke(); });
+    S.ys.forEach(y=>{ ctx.beginPath(); ctx.moveTo(BX(-6),BY(y)); ctx.lineTo(BX(B.W+6),BY(y)); ctx.stroke(); });
+    ctx.setLineDash([]);
+  } else {
+    const sl=seamLayer(Math.max(1,Math.round(1.1/(B.raster.res*sc))));
+    ctx.save(); ctx.translate(view.ox,view.oy); ctx.scale(sc,-sc); ctx.translate(bx,by); ctx.globalAlpha=S.pieces?.55:1;
+    ctx.drawImage(sl,0,0,B.raster.gw*B.raster.res,B.raster.gh*B.raster.res); ctx.restore();
+  }
+  // grips for moving each seam
+  ctx.fillStyle=tok('--cut');
+  S.xs.forEach(x=>{ ctx.beginPath(); ctx.moveTo(BX(x)-6,BY(B.H)-16); ctx.lineTo(BX(x)+6,BY(B.H)-16); ctx.lineTo(BX(x),BY(B.H)-7); ctx.fill(); });
+  S.ys.forEach(y=>{ ctx.beginPath(); ctx.moveTo(BX(0)-16,BY(y)-6); ctx.lineTo(BX(0)-16,BY(y)+6); ctx.lineTo(BX(0)-7,BY(y)); ctx.fill(); });
+  if (!S.pieces){ ctx.fillStyle=tok('--cut'); for (const t of S.tabs){ const pts=knobPts(t); ctx.beginPath(); pts.forEach(([x,y],i)=> i?ctx.lineTo(BX(x),BY(y)):ctx.moveTo(BX(x),BY(y))); ctx.closePath(); ctx.fill(); } }
+  if (!S.pieces && S.ev?.frags?.length){ // tips that stay with the piece they're attached to
+    const rs=B.raster.res; ctx.save(); ctx.translate(view.ox,view.oy); ctx.scale(sc,-sc); ctx.translate(bx,by);
+    ctx.fillStyle=tok('--cut'); ctx.globalAlpha=.6;
+    for (const f of S.ev.frags) for (const [x0,y,x1] of f.runs) ctx.fillRect(x0*rs,y*rs,(x1-x0+1)*rs,rs);
+    ctx.restore();
+  }
+  const xb=[0,...S.xs,B.W], yb=[0,...S.ys,B.H];
+  ctx.font='600 13px "Barlow Semi Condensed", sans-serif';
+  for (let r=0;r<S.nr;r++) for (let c=0;c<S.nc;c++){
+    const tile = S.pieces ? S.pieces.find(p=>p.c===c&&p.r===r) : S.ev?.tiles.find(t=>t.c===c&&t.r===r);
+    const fit = tile?.fit; if(!tile || fit?.empty) continue;
+    const et=S.ev?.tiles.find(t=>t.c===c&&t.r===r);
+    const cx = et?.cx!=null && !drag ? BX(et.cx) : BX((xb[c]+xb[c+1])/2), cy = et?.cy!=null && !drag ? BY(et.cy) : BY((yb[r]+yb[r+1])/2);
+    const txt = label(c,r) + (fit && fit.angle ? `  ↻${Math.round(fit.angle)}°` : '');
+    const w=ctx.measureText(txt).width+14;
+    ctx.fillStyle=tok('--panel'); ctx.strokeStyle= fit && !fit.fits ? tok('--bad') : tok('--line');
+    ctx.beginPath(); ctx.roundRect(cx-w/2,cy-11,w,22,5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle= fit && !fit.fits ? tok('--bad') : tok('--ink'); ctx.fillText(txt,cx,cy+1);
+  }
+}
+
+/* ---------- UI ---------- */
+const wholeParts = () => S.model ? S.model.parts.filter(p=>p.whole) : [];
+function refresh(){
+  const m=S.model; if(!m) return;
+  $('cVal').textContent=S.nc; $('rVal').textContent=S.nr;
+  ['cMinus','cPlus','rMinus','rPlus','autoBtn'].forEach(id=>$(id).disabled=!S.big);
+  $('stats').innerHTML = `<dt>Width</dt><dd>${fmt(m.W)}</dd><dt>Height</dt><dd>${fmt(m.H)}</dd><dt>Thickness</dt><dd>${m.T.toFixed(1)} mm</dd><dt>Separate parts</dt><dd>${m.parts.length}</dd>`;
+  const tiles=S.ev?.tiles.filter(t=>!t.fit.empty)||[]; const bad=tiles.filter(t=>!t.fit.fits).length; const ang=tiles.filter(t=>t.fit.angle).length;
+  const n = S.pieces ? S.pieces.length : tiles.length, nw=wholeParts().length;
+  const bits=[];
+  if (S.big) bits.push(`${S.tabs.length} puzzle tab${S.tabs.length===1?'':'s'}`);
+  if (S.big && S.ev?.lay.curved) bits.push('seams follow the design');
+  else if (S.big && S.curveFell) bits.push('straight seams, since following ones would not fit the bed');
+  if (nw) bits.push(`${nw} part${nw===1?'':'s'} print whole`);
+  const nf=S.ev?.frags?.length||0; if (S.big && nf) bits.push(`${nf} small tip${nf===1?'':'s'} kept attached`);
+  if (ang) bits.push(`${ang} piece${ang===1?'':'s'} at an angle`);
+  if (bad) bits.push(`${bad} too big for the bed`);
+  $('summary').innerHTML = (S.big ? `${n} piece${n===1?'':'s'} to cut` : 'Nothing needs cutting') + `<small>${bits.join(' · ')}</small>`;
+  $('cutBtn').disabled=!S.wasm; $('cutBtn').textContent = S.pieces ? 'Split again' : (S.big ? 'Split into pieces' : 'Prepare files');
+  $('results').hidden=!S.pieces; if (S.pieces) renderTable();
+  if (!S.pieces) $('prog').style.width='0';
+  draw();
+}
+function renderTable(){
+  const ps=S.pieces.slice().sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+  const ws=wholeParts();
+  $('resTitle').textContent=[ps.length?`${ps.length} cut piece${ps.length===1?'':'s'}`:'', ws.length?`${ws.length} whole part${ws.length===1?'':'s'}`:''].filter(Boolean).join(' + ')+' ready';
+  const row=(p,kind)=>`<tr><td><strong>${p.name}</strong>${kind?` <span class="hint">${kind}</span>`:''}</td>
+    <td class="mono">${fmtPair(p.w,p.h)}</td><td class="mono">${p.t.toFixed(1)} mm</td>
+    <td>${p.fit.angle? `Turned ${p.fit.angle}°`:'Square to the bed'}</td>
+    <td>${p.fit.fits?'<span class="pill ok">Fits</span>':'<span class="pill bad">Too big</span>'}</td></tr>`;
+  $('tbody').innerHTML = ps.map(p=>row(p, p.parts>1?`cut piece, ${p.parts} bits`:'cut piece')).join('') + ws.map(p=>row(p,'whole')).join('');
+}
+function showMsg(t, err){ const e=$('msg'); e.hidden=!t; e.textContent=t||''; e.className='msg'+(err?' err':''); }
+function setModel(tris, name, isSample, manifold){
+  const n = normalize(tris);
+  let mf;
+  try { mf = toManifold(n.tris); } catch(e){ throw new Error('This STL has holes or overlapping faces, so it cannot be cut cleanly. In Orca, right-click the model and choose "Fix model", then export it again.'); }
+  if (manifold) manifold.delete();
+  if (S.model){ S.model.parts.forEach(p=>p.m.delete()); }
+  if (S.big){ S.big.manifold.delete(); S.big=null; }
+  const comps = mf.decompose(); mf.delete();
+  const parts = comps.map(m=>{
+    const mesh=m.getMesh(), np=mesh.numProp, vp=Float32Array.from(mesh.vertProperties), tv=Uint32Array.from(mesh.triVerts), bb=m.boundingBox();
+    const pts=[]; for (let i=0;i<vp.length;i+=np) pts.push([vp[i],vp[i+1]]);
+    return {m, vp, np, tv, bb, hull:hull(pts), w:bb.max[0]-bb.min[0], h:bb.max[1]-bb.min[1], t:bb.max[2]-bb.min[2],
+      cx:(bb.min[0]+bb.max[0])/2, cy:(bb.min[1]+bb.max[1])/2};
+  });
+  // name parts in reading order: top to bottom in 1-inch bands, then left to right
+  parts.sort((a,b)=> (Math.round(-a.cy/MM_IN)-Math.round(-b.cy/MM_IN)) || (a.cx-b.cx));
+  parts.forEach((p,i)=>p.name='P'+(i+1));
+  S.model = {...n, parts}; layerKey='';
+  S.fileBase=name; S.isSample=isSample;
+  $('fileName').textContent = isSample ? 'Mountain sun plaque' : name+'.stl'; $('sampleTag').hidden=!isSample;
+  relayout();
+}
+async function openFile(f){
+  if(!f) return; showMsg('');
+  try{ const buf=await f.arrayBuffer(); setModel(parseSTL(buf), f.name.replace(/\.stl$/i,''), false); }
+  catch(e){ showMsg(e.message,true); }
+}
+$('drop').onclick=()=>$('fileIn').click();
+$('drop').onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); $('fileIn').click(); } };
+$('fileIn').onchange=e=>openFile(e.target.files[0]);
+['dragover','dragenter'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();$('drop').classList.add('over');}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();$('drop').classList.remove('over');}));
+document.addEventListener('drop',e=>openFile(e.dataTransfer.files[0]));
+
+function setUnits(u){ S.units=u; $('uIn').setAttribute('aria-pressed',u==='in'); $('uMm').setAttribute('aria-pressed',u==='mm');
+  document.querySelectorAll('.unit').forEach(e=>e.textContent=u); $('maxSize').step = u==='in'?'0.05':'1';
+  $('maxSize').value = u==='in' ? (S.maxMM/MM_IN).toFixed(2) : S.maxMM.toFixed(0); refresh(); }
+$('uIn').onclick=()=>setUnits('in'); $('uMm').onclick=()=>setUnits('mm');
+$('maxSize').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)) return; S.maxMM = S.units==='in'? v*MM_IN : v; relayout(); };
+const setJoint=j=>{ S.joint=j; $('jPuzzle').setAttribute('aria-pressed',j==='puzzle'); $('jFlat').setAttribute('aria-pressed',j==='flat'); $('tabFields').hidden=j!=='puzzle'; relayout(); };
+$('jPuzzle').onclick=()=>setJoint('puzzle'); $('jFlat').onclick=()=>setJoint('flat');
+$('tabSize').onchange=e=>{ const v=parseFloat(e.target.value); if(v>=4&&v<=30){ S.tabT=v; relayout(); } };
+$('clearance').onchange=e=>{ const v=parseFloat(e.target.value); if(v>=0&&v<=1){ S.clear=v; S.pieces=null; refresh(); } };
+$('cMinus').onclick=()=>{ if(S.nc>1) relayout([S.nc-1,S.nr]); };
+$('cPlus').onclick=()=>{ if(S.nc<12) relayout([S.nc+1,S.nr]); };
+$('rMinus').onclick=()=>{ if(S.nr>1) relayout([S.nc,S.nr-1]); };
+$('rPlus').onclick=()=>{ if(S.nr<12) relayout([S.nc,S.nr+1]); };
+$('autoBtn').onclick=()=>relayout();
+const setSeams=v=>{ S.seams=v; $('sFollow').setAttribute('aria-pressed',v==='follow'); $('sStraight').setAttribute('aria-pressed',v==='straight'); if(S.big) reevaluate(); };
+$('sFollow').onclick=()=>setSeams('follow'); $('sStraight').onclick=()=>setSeams('straight');
+$('keepWhole').onchange=e=>{ S.keepWhole=e.target.checked; relayout(); };
+$('cutBtn').onclick=async()=>{
+  $('cutBtn').disabled=true; showMsg('Cutting…');
+  try{ S.pieces=await cutAll(); const bad=S.pieces.filter(p=>!p.fit.fits).length + wholeParts().filter(p=>!p.fit.fits).length;
+    showMsg(bad?`${bad} piece${bad>1?'s are':' is'} still too big for your bed. Add a row or column, or move a cut line.`:'Everything fits your bed.', !!bad); }
+  catch(e){ showMsg('Cutting failed: '+(e.message||e),true); }
+  refresh();
+};
+$('dlBtn').onclick=async()=>{
+  const zip=new JSZip(); const base=S.fileBase||'wall-art';
+  const ws=wholeParts();
+  for (const p of S.pieces) zip.file(`cut-pieces/${base}_${p.name}.stl`, exportPiece(p));
+  for (const p of ws) zip.file(`whole-parts/${base}_${p.name}.stl`, exportPiece(p));
+  const line=p=>`${p.name}: ${fmtPair(p.w,p.h)}${p.fit.angle?`, turned ${p.fit.angle}° on the bed`:''}`;
+  const map=[`${base}`,`Max piece size: ${fmt(S.maxMM)}`,'',
+    ...(S.pieces.length?[`CUT PIECES (${S.pieces.length}) — the large part, split to fit`,...S.pieces.map(line),
+      'Rows are lettered from the top (A, B, C…); columns are numbered from the left.','']:[]),
+    ...(ws.length?[`WHOLE PARTS (${ws.length}) — separate shapes that fit as-is, numbered top to bottom, left to right`,...ws.map(line)]:[])].join('\n');
+  zip.file('layout.txt', map);
+  draw(); const png = await new Promise(r=>cv.toBlob(r,'image/png')); if (png) zip.file('layout.png', png);
+  const blob = await zip.generateAsync({type:'blob'}); const fname=`${base}-pieces.zip`;
+  const dl = await (window.claude?.use ? window.claude.use('downloads') : null);
+  if (dl){ try{ await dl.save({filename:fname,data:blob}); showMsg('Saved '+fname+'.'); } catch(e){ if(e.code!=='declined') showMsg('The download did not go through ('+(e.code||'error')+').',true); } }
+  else { const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname; a.click(); }
+};
+
+/* dragging cut lines */
+let drag=null;
+const hit=(px,py)=>{ const B=S.big; if(!B) return null; const X=x=>view.ox+(x+B.ox)*view.sc, Y=y=>view.oy-(y+B.oy)*view.sc;
+  for (let i=0;i<S.xs.length;i++) if (Math.abs(px-X(S.xs[i]))<10 && Math.abs(py-(Y(B.H)-11))<10) return {axis:'x',i};
+  for (let i=0;i<S.ys.length;i++) if (Math.abs(py-Y(S.ys[i]))<10 && Math.abs(px-(X(0)-11))<10) return {axis:'y',i};
+  if (S.ev?.lay.curved) return null; // design-following seams move by their grips
+  for (let i=0;i<S.xs.length;i++) if (Math.abs(px-X(S.xs[i]))<9) return {axis:'x',i};
+  for (let i=0;i<S.ys.length;i++) if (Math.abs(py-Y(S.ys[i]))<9) return {axis:'y',i}; return null; };
+const pos=e=>{ const r=cv.getBoundingClientRect(); return [e.clientX-r.left,e.clientY-r.top]; };
+cv.addEventListener('pointerdown',e=>{ const [x,y]=pos(e); drag=hit(x,y); if(drag){ cv.setPointerCapture(e.pointerId); } });
+cv.addEventListener('pointermove',e=>{ const [x,y]=pos(e);
+  if(!drag){ const h=hit(x,y); cv.style.cursor = h ? (h.axis==='x'?'ew-resize':'ns-resize') : 'default'; return; }
+  const m=S.big, arr = drag.axis==='x'?S.xs:S.ys, lim = drag.axis==='x'?m.W:m.H;
+  let v = drag.axis==='x' ? (x-view.ox)/view.sc - m.ox : (view.oy-y)/view.sc - m.oy;
+  const lo=(drag.i? arr[drag.i-1]:0)+20, hi=(drag.i<arr.length-1? arr[drag.i+1]:lim)-20;
+  arr[drag.i]=Math.min(hi,Math.max(lo,v)); S.pieces=null; draw(); });
+cv.addEventListener('pointerup',()=>{ if(drag){ drag=null; reevaluate(); } });
+new ResizeObserver(()=>draw()).observe($('box'));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{layerKey='';draw();});
+new MutationObserver(()=>{layerKey='';draw();}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+/* boot */
+try{
+  S.wasm = await loadEngine();
+  $('overlay').hidden=true;
+  const s=sampleTris(); setModel(s.tris,'mountain-sun',true,s.manifold);
+}catch(e){
+  $('overlay').textContent='The cutting engine did not load. Reload the page to try again.'; $('summary').textContent='Engine not loaded';
+  console.error(e);
+}
+</script>
+</body>
+</html>
