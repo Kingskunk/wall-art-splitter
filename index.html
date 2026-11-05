@@ -398,7 +398,7 @@ function seamTabs(lay){
       if (!straight){ ok.push(null); continue; }
       const n=[-ty,tx], ia=cell(p[0]-n[0]*2,p[1]-n[1]*2), ib=cell(p[0]+n[0]*2,p[1]+n[1]*2);
       if (ia<0||ib<0){ ok.push(null); continue; }
-      const A=lab[ia], B=lab[ib];
+      const A=lab[ia], B=lab[ib]; if (A<0||B<0){ ok.push(null); continue; }
       if (A===B || (sm.col>=0 && (A%nc!==sm.col || B%nc!==sm.col))){ ok.push(null); continue; }
       let good=true;
       for (const [u,v] of loc){ // knob side must be solid and inside B, mirror side solid and inside A
@@ -615,14 +615,14 @@ function maskFit(inP, b, M){ // footprint of the material cells where inP(i), wi
 }
 function smartLayout(){
   const B=S.big, {res,gw,gh,occ}=B.raster, d=tabDepth(), Mfit=S.maxMM-d;
-  const labels=new Int16Array(gw*gh), pieces=[{sides:[]}], cuts=[];
+  const labels=Int16Array.from(B.partOf), pieces=B.parts.map((_,k)=>({part:k, sides:[]})), cuts=[];
   const near=new Uint8Array(gw*gh);
   for (let y=0;y<gh;y++) for (let x=0;x<gw;x++) if (occ[y*gw+x]) for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){ const nx=x+dx, ny=y+dy; if(nx>=0&&ny>=0&&nx<gw&&ny<gh) near[ny*gw+nx]=1; }
   const K=25, half=Math.round(35/res), step=Math.round(15/res), edge=Math.round(20/res);
   const bboxOf=p=>{ let x0=gw,y0=gh,x1=-1,y1=-1;
     for (let y=0;y<gh;y++){ const o=y*gw; for (let x=0;x<gw;x++){ const i=o+x; if (labels[i]===p && occ[i]){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; } } }
     return x1<0?null:{x0,y0,x1,y1}; };
-  const work=[0]; let guard=0;
+  const work=pieces.map((_,k)=>k); let guard=0;
   while (work.length && pieces.length<40 && guard++<80){
     const p=work.shift(), b=bboxOf(p); if(!b) continue;
     if (maskFit(i=>labels[i]===p,b,Mfit).fit.fits) continue;
@@ -643,7 +643,7 @@ function smartLayout(){
     if (Hc>2*edge) addAll('h',rowC,Hc,b.y0);
     let best=null;
     for (const c of cands){
-      const cost=(x,y,dev)=>{ const i=y*gw+x; return (labels[i]===p ? (occ[i]?K:(near[i]?3:1)) : 0.3) + 0.03*Math.abs(dev); };
+      const cost=(x,y,dev)=>{ const i=y*gw+x; return (labels[i]===p ? K : (near[i]&&!occ[i] ? 3 : 1)) + 0.03*Math.abs(dev); };
       let P;
       if (c.kind==='v'){ const x0=Math.max(0,c.pos-half), x1=Math.min(gw-1,c.pos+half), y0=Math.max(0,b.y0-2), y1=Math.min(gh-1,b.y1+2);
         P=cheapestPath(x0,x1,y0,y1,(x,y)=>cost(x,y,x-c.pos),(x,y)=>y===y0,(x,y)=>y===y1); }
@@ -665,7 +665,7 @@ function smartLayout(){
     }
     if (!best) continue; // nothing sensible to cut; the piece stays flagged as too big
     const q=pieces.length, ci=cuts.length; cuts.push({path:best.path, kind:best.kind});
-    pieces.push({sides:[...pieces[p].sides,{cut:ci,keep:-1}]}); pieces[p].sides.push({cut:ci,keep:1});
+    pieces.push({part:pieces[p].part, sides:[...pieces[p].sides,{cut:ci,keep:-1}]}); pieces[p].sides.push({cut:ci,keep:1});
     for (let i=0;i<labels.length;i++) if (labels[i]===p && best.side[i]!==1) labels[i]=q;
     work.push(p,q);
   }
@@ -718,6 +718,66 @@ function seamArt(lay){
   return n*res;
 }
 const pieceCount = ev => ev.tiles.filter(t=>!t.fit.empty).length;
+/* ---------- plan each separate part on its own ---------- */
+// For each oversized part, try "cut at the thinnest joins" and "best grid, then merge neighbours" on that part
+// alone, keep the better plan for that part, then stitch all parts' plans into one layout.
+function partContext(k){
+  const B=S.big, R=B.raster, {res,gw,gh,occ}=R;
+  let x0=gw,y0=gh,x1=-1,y1=-1;
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x; if (occ[i] && B.partOf[i]===k){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; } }
+  if (x1<0) return null;
+  x0=Math.max(0,x0-2); y0=Math.max(0,y0-2); x1=Math.min(gw-1,x1+2); y1=Math.min(gh-1,y1+2);
+  const sw=x1-x0+1, sh=y1-y0+1, socc=new Uint8Array(sw*sh), partOf=new Int16Array(sw*sh).fill(-1), colCost=new Float64Array(sw), rowCost=new Float64Array(sh);
+  for (let y=0;y<sh;y++) for (let x=0;x<sw;x++){ const g=(y+y0)*gw+(x+x0); if (occ[g] && B.partOf[g]===k){ socc[y*sw+x]=1; partOf[y*sw+x]=0; colCost[x]++; rowCost[y]++; } }
+  return {x0,y0, big:{W:sw*res, H:sh*res, raster:{res,gw:sw,gh:sh,occ:socc,colCost,rowCost}, partOf, parts:[B.parts[k]], ox:0, oy:0}};
+}
+// turn any layout into pieces = lists of regions, each region = list of {cut, keep} sides
+function layoutToPieces(lay){
+  if (lay.smart) return {cuts:lay.cuts, pieces:lay.pieces.map(p=>({regions:[p.sides]}))};
+  const base = lay.merged ? lay.base : lay, nc=base.nc, nr=base.nr, cuts=[], vIdx=[], hIdx=[];
+  base.vpaths.forEach(p=>{ vIdx.push(cuts.length); cuts.push({path:p, kind:'v'}); });
+  base.hpaths.forEach(col=>{ hIdx.push(col.map(p=>{ cuts.push({path:p, kind:'h'}); return cuts.length-1; })); });
+  const tileSides=t=>{ const c=t%nc, r=(t/nc)|0, s=[];
+    if (c<nc-1) s.push({cut:vIdx[c],keep:1}); if (c>0) s.push({cut:vIdx[c-1],keep:-1});
+    if (r<nr-1) s.push({cut:hIdx[c][r],keep:1}); if (r>0) s.push({cut:hIdx[c][r-1],keep:-1}); return s; };
+  const nT=nc*nr;
+  if (!lay.merged) return {cuts, pieces:[...Array(nT).keys()].map(t=>({regions:[tileSides(t)]}))};
+  const pieces=[...Array(lay.nc)].map(()=>({regions:[]}));
+  for (let t=0;t<nT;t++) pieces[lay.groupOf[t]].regions.push(tileSides(t));
+  return {cuts, pieces};
+}
+function planParts(){
+  const B=S.big, {gw,gh,res,occ}=B.raster, labels=new Int16Array(gw*gh).fill(-1), cuts=[], pieces=[];
+  for (let k=0;k<B.parts.length;k++){
+    const ctx=partContext(k); if (!ctx) continue;
+    const saved=S.big; S.big=ctx.big; let best=null;
+    try {
+      const opts=[];
+      const g=finishEval(smartLayout()); if (g && g.ok) opts.push(g);
+      const L=searchLayout(); let base=L.ev;
+      if (S.seams==='follow'){ for (const h of [40,22]){ const ev=evaluate(L.xs,L.ys,h); if (ev && ev.ok){ base=ev; break; } } }
+      if (base.ok) opts.push(base);
+      const mg=mergeLayout(base.lay), m=mg && finishEval(mg); if (m && m.ok) opts.push(m);
+      opts.sort((a,b)=>(pieceCount(a)-pieceCount(b)) || (seamArt(a.lay)-seamArt(b.lay)));
+      best=opts[0] || base;
+    } finally { S.big=saved; }
+    // stitch into the whole design: shift seams by the part's offset, renumber pieces, copy labels
+    const dx=ctx.x0*res, dy=ctx.y0*res, sub=ctx.big.raster, conv=layoutToPieces(best.lay), c0=cuts.length, p0=pieces.length;
+    conv.cuts.forEach(c=>cuts.push({kind:c.kind, path:c.path.map(([x,y])=>[x+dx,y+dy])}));
+    conv.pieces.forEach(p=>pieces.push({part:k, regions:p.regions.map(sides=>sides.map(sd=>({cut:sd.cut+c0, keep:sd.keep})))}));
+    for (let y=0;y<sub.gh;y++) for (let x=0;x<sub.gw;x++){ const i=y*sub.gw+x; if (!sub.occ[i]) continue; labels[(y+ctx.y0)*gw+(x+ctx.x0)]=p0+best.lay.labels[i]; }
+  }
+  // drop pieces with no art, then name the rest in reading order
+  const n=pieces.length, sx=new Float64Array(n), sy=new Float64Array(n), cnt=new Float64Array(n);
+  for (let i=0;i<labels.length;i++) if (occ[i] && labels[i]>=0){ const t=labels[i]; sx[t]+=i%gw; sy[t]+=(i/gw)|0; cnt[t]++; }
+  const keep=[...Array(n).keys()].filter(t=>cnt[t]>0), remap=new Int16Array(n).fill(-1); keep.forEach((t,j)=>remap[t]=j);
+  for (let i=0;i<labels.length;i++) if (labels[i]>=0) labels[i]=remap[labels[i]];
+  const kept=keep.map(t=>pieces[t]);
+  const order=keep.map((t,j)=>j).sort((a,b)=>{ const ta=keep[a], tb=keep[b];
+    return (Math.round(-sy[ta]/cnt[ta]*res/(2*MM_IN))-Math.round(-sy[tb]/cnt[tb]*res/(2*MM_IN))) || (sx[ta]/cnt[ta]-sx[tb]/cnt[tb]); });
+  const names=new Array(kept.length); order.forEach((j,r)=>names[j]='C'+(r+1));
+  return {curved:true, smart:true, nc:kept.length, nr:1, labels, cuts, pieces:kept, names, vpaths:[], hpaths:[]};
+}
 function finishEval(lay){
   if (!lay) return null; lay.id=++layCounter;
   const fr=findFragments(lay), tabs=tabsClearOf(seamTabs(lay),fr), fp=tileFootprints(lay,tabs,fr), M=S.maxMM;
@@ -785,7 +845,7 @@ function rebuildBig(){
   let k=0; for (const p of m.parts) if (p.whole) p.name='P'+(++k);
   const key = m.parts.map(p=>p.whole?1:0).join('');
   if (S.big && S.big.key===key) return;
-  if (S.big) S.big.manifold.delete();
+  if (S.big){ S.big.manifold.delete(); S.big.parts.forEach(q=>q.delete()); }
   S.big=null; layerKey='';
   const bigs=m.parts.filter(p=>!p.whole); if(!bigs.length) return;
   let x0=1e30,y0=1e30,x1=-1e30,y1=-1e30;
@@ -794,7 +854,14 @@ function rebuildBig(){
   const mesh=mf.getMesh(), np=mesh.numProp, vp=mesh.vertProperties, tv=mesh.triVerts, tris=new Float32Array(tv.length*3);
   for (let i=0;i<tv.length;i++){ tris[i*3]=vp[tv[i]*np]; tris[i*3+1]=vp[tv[i]*np+1]; tris[i*3+2]=vp[tv[i]*np+2]; }
   const W=x1-x0, H=y1-y0;
-  S.big={key, manifold:mf, W, H, T:m.T, ox:x0, oy:y0, raster:buildRaster(tris,W,H), count:bigs.length};
+  const raster=buildRaster(tris,W,H);
+  // which separate part each art cell belongs to, so each one is split on its own
+  const partOf=new Int16Array(raster.gw*raster.gh).fill(-1);
+  bigs.forEach((bp,k)=>{ const c=document.createElement('canvas'); c.width=raster.gw; c.height=raster.gh; const g=c.getContext('2d'); g.scale(1/raster.res,1/raster.res);
+    g.beginPath(); pathTris(g,bp.vp,bp.np,bp.tv,-x0,-y0); g.fillStyle='#000'; g.fill('nonzero');
+    const d=g.getImageData(0,0,raster.gw,raster.gh).data; for (let i=0;i<partOf.length;i++) if (raster.occ[i] && d[i*4+3]>60) partOf[i]=k; });
+  for (let i=0;i<partOf.length;i++) if (raster.occ[i] && partOf[i]<0) partOf[i]=0;
+  S.big={key, manifold:mf, parts:bigs.map(bp=>bp.m.translate([-x0,-y0,0])), partOf, W, H, T:m.T, ox:x0, oy:y0, raster, count:bigs.length};
 }
 /* Seam planning takes a moment on big designs: say so, then do the work on the next frame. */
 let busyT=0;
@@ -808,15 +875,8 @@ function relayoutNow(fixed){
   if (S.split==='smart' && !fixed){
     // two ways to cut only where needed: one piece at a time at the thinnest join, or the best grid with
     // neighbours merged back together wherever they still fit. Keep the one with fewer pieces, then less art cut.
-    const opts=[];
-    const g=finishEval(smartLayout()); if (g.ok) opts.push(g);
-    const L=searchLayout(); S.nc=L.nc; S.nr=L.nr; S.xs=L.xs; S.ys=L.ys; S.ev=L.ev;
-    let base=L.ev; if (S.seams==='follow'){ for (const h of [40,22]){ const ev=evaluate(L.xs,L.ys,h); if (ev && ev.ok){ base=ev; break; } } }
-    const mg=mergeLayout(base.lay), m=mg && finishEval(mg); if (m && m.ok) opts.push(m);
-    if (base.ok) opts.push(base);
-    if (opts.length){
-      opts.sort((a,b)=>(pieceCount(a)-pieceCount(b)) || (seamArt(a.lay)-seamArt(b.lay)));
-      const ev=opts[0]; S.ev=ev; S.nc=ev.lay.nc; S.nr=ev.lay.nr; S.xs=[]; S.ys=[];
+    const ev=finishEval(planParts());
+    if (ev.ok){ S.ev=ev; S.nc=ev.lay.nc; S.nr=ev.lay.nr; S.xs=[]; S.ys=[];
       S.curveFell=false; S.tabs=ev.tabs; S.pieces=null; seamKey=''; refresh(); return;
     }
     S.smartFell=true; // fall back to the grid
@@ -834,10 +894,13 @@ function tileRegions(lay){ // one 2D outline per piece, indexed row*nc + col
   const {CrossSection}=S.wasm, B=S.big, M=SEAM_M, nc=lay.nc, nr=lay.nr, out=[];
   const all=()=>CrossSection.square([B.W+2*M,B.H+2*M]).translate([-M,-M]);
   if (lay.smart){ // each piece = everything, narrowed by the side of each cut it sits on
-    for (const pc of lay.pieces){ let reg=all();
-      for (const sd of pc.sides){ const cut=lay.cuts[sd.cut], cs=new CrossSection([cut.kind==='v'?leftOfPoly(cut.path):belowPoly(cut.path)]);
-        const n = sd.keep>0 ? reg.intersect(cs) : reg.subtract(cs); reg.delete(); cs.delete(); reg=n; }
-      out.push(reg); }
+    for (const pc of lay.pieces){ const regs=[];
+      for (const sides of (pc.regions || [pc.sides])){ let reg=all();
+        for (const sd of sides){ const cut=lay.cuts[sd.cut], cs=new CrossSection([cut.kind==='v'?leftOfPoly(cut.path):belowPoly(cut.path)]);
+          const n = sd.keep>0 ? reg.intersect(cs) : reg.subtract(cs); reg.delete(); cs.delete(); reg=n; }
+        regs.push(reg); }
+      const u = regs.length===1 ? regs[0] : CrossSection.union(regs); if (regs.length>1) regs.forEach(r=>r.delete());
+      out.push(u); }
     return out;
   }
   const left=lay.vpaths.map(p=>new CrossSection([leftOfPoly(p)]));
@@ -878,7 +941,7 @@ async function cutAll(){
     for (const f of fcs){ if (f.to!==t && f.from!==t) continue; const next = f.to===t ? reg.add(f.cs) : reg.subtract(f.cs); reg.delete(); reg=next; }
     if (S.clear>0){ const o=reg.offset(-S.clear/2,'Round',2,32); reg.delete(); reg=o; }
     const prism = reg.extrude(m.T+4).translate([0,0,-2]);
-    let piece = m.manifold.intersect(prism);
+    let piece = (lay.smart ? m.parts[lay.pieces[t].part] : m.manifold).intersect(prism);
     reg.delete(); prism.delete();
     { // drop slivers under 1.5 mm left along a seam
       const bits=piece.decompose(), keep=bits.filter(b=>{ const q=b.boundingBox(); return Math.max(q.max[0]-q.min[0],q.max[1]-q.min[1])>=1.5; });
@@ -944,7 +1007,7 @@ function seamLayer(k){
     for (let x=0;x<gw;x++){ let last=-1e9; for (let y=0;y<gh;y++){ if(tmp[y*gw+x]) last=y; if(y-last<=r) na[y*gw+x]=1; } last=1e9; for (let y=gh-1;y>=0;y--){ if(tmp[y*gw+x]) last=y; if(last-y<=r) na[y*gw+x]=1; } }
     B.nearArt=na; }
   const edge=new Uint8Array(gw*gh), na=B.nearArt;
-  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x; if (na[i] && ((x+1<gw && lab[i+1]!==lab[i]) || (y+1<gh && lab[i+gw]!==lab[i]))) edge[i]=1; }
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x; if (na[i] && lab[i]>=0 && ((x+1<gw && lab[i+1]>=0 && lab[i+1]!==lab[i]) || (y+1<gh && lab[i+gw]>=0 && lab[i+gw]!==lab[i]))) edge[i]=1; }
   const c=document.createElement('canvas'); c.width=gw; c.height=gh; const g=c.getContext('2d'), img=g.createImageData(gw,gh);
   const col=tok('--cut'), tmp=document.createElement('canvas').getContext('2d'); tmp.fillStyle=col; tmp.fillRect(0,0,1,1); const [cr,cg,cb]=tmp.getImageData(0,0,1,1).data;
   const h=Math.floor(k/2);
