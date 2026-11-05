@@ -1,3 +1,5 @@
-# Claude session files and the artifact build copied in by the app
+# Claude session settings
 .claude/
-splitter/
+# the artifact source lives in splitter/index.html; its engine copy duplicates ./manifold.wasm
+splitter/manifold.wasm
+splitter/*.stl

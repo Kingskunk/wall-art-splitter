@@ -6,6 +6,7 @@ Load an STL (exported from Tinkercad or anywhere else). The tool lays the design
 
 ## What it does
 
+- **Cuts only where needed.** Oversized parts are cut one piece at a time at their thinnest joins (often where script letters connect), and the tool also tries the best grid with neighbouring pieces merged back together. It keeps whichever plan gives fewer pieces and cuts less of the art. A plain grid mode is still there.
 - **Keeps loose parts whole.** Separate letters, words and shapes that fit the bed are left uncut. Only parts too big for the bed get split.
 - **Seams follow the design.** Cuts run through gaps in the art and cross solid lines at their narrowest point. You can switch to straight seams.
 - **Puzzle tabs.** Knob-and-socket joints go wherever a seam crosses art solid enough to hold one, with an adjustable fit gap.
@@ -33,6 +34,14 @@ python -m http.server 8000
 ```
 
 Then open http://localhost:8000.
+
+## Editing
+
+`splitter/index.html` is the source. It is written for Claude's artifact viewer, which adds the `<html>` and `<head>` wrapper itself. After changing it, rebuild the GitHub Pages page with:
+
+```
+python tools/make-standalone.py
+```
 
 ## Credits
 

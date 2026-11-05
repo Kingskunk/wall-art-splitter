@@ -74,7 +74,7 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
 .summary small{font-family:var(--f-body);font-weight:400;font-size:13px;color:var(--muted);margin-left:6px}
 .canvasbox{position:relative;width:100%;aspect-ratio:16/10;max-width:100%;background:var(--plate);touch-action:none}
 canvas#view{position:absolute;inset:0;width:100%;height:100%;display:block}
-.overlay[hidden],.msg[hidden],.panel[hidden]{display:none}
+.overlay[hidden],.msg[hidden],.panel[hidden],#gridCtl[hidden]{display:none}
 .overlay{position:absolute;inset:0;display:grid;place-items:center;font-size:14px;color:var(--muted);pointer-events:none}
 .legend{display:flex;flex-wrap:wrap;gap:6px 16px;padding:10px 14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
 .legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:6px;background:var(--cut)}
@@ -146,6 +146,12 @@ td.mono{font-family:var(--f-mono)}
 
       <section>
         <span class="label">Layout <span style="text-transform:none;letter-spacing:0;font-weight:400">(large parts)</span></span>
+        <div class="field"><label>Splitting</label>
+          <div class="seg" role="group" aria-label="Splitting method">
+            <button id="mSmart" aria-pressed="true">Only where needed</button><button id="mGrid" aria-pressed="false">Grid</button>
+          </div>
+        </div>
+        <div id="gridCtl" style="display:grid;gap:10px">
         <div class="stepper"><span>Pieces across</span><div class="ctl"><button id="cMinus" aria-label="Fewer columns">−</button><span id="cVal">2</span><button id="cPlus" aria-label="More columns">+</button></div></div>
         <div class="stepper"><span>Pieces down</span><div class="ctl"><button id="rMinus" aria-label="Fewer rows">−</button><span id="rVal">2</span><button id="rPlus" aria-label="More rows">+</button></div></div>
         <div class="field"><label>Seams</label>
@@ -153,8 +159,10 @@ td.mono{font-family:var(--f-mono)}
             <button id="sFollow" aria-pressed="true">Follow the design</button><button id="sStraight" aria-pressed="false">Straight</button>
           </div>
         </div>
-        <button class="btn" id="autoBtn">Find fewest pieces</button>
         <p class="hint">Following seams run through gaps in the art and cross lines at their narrowest point. Drag the small triangles at the edge of the preview to move a seam.</p>
+        </div>
+        <button class="btn" id="autoBtn">Find fewest pieces</button>
+        <p class="hint" id="smartHint">Only where needed cuts each oversized piece once at its thinnest join, and repeats until every piece fits. Grid cuts the whole part with straight-through rows and columns.</p>
       </section>
 
       <section>
@@ -198,7 +206,7 @@ const S = {
   units:'in', maxMM: 11.75*MM_IN, joint:'puzzle', tabT:8, clear:0.15,
   wasm:null, model:null, // {tris, W,H,T, manifold, raster}
   nc:1, nr:1, xs:[], ys:[], tabs:[], pieces:null, fileBase:'mountain-sun', isSample:true,
-  keepWhole:true, big:null, seams:'follow', curveFell:false, // big = the oversized parts that get the cut grid, in their own frame
+  keepWhole:true, big:null, seams:'follow', curveFell:false, split:'smart', smartFell:false, // big = the oversized parts that get the cut grid, in their own frame
 };
 
 /* ---------- units ---------- */
@@ -374,7 +382,7 @@ function seamTabs(lay){
   const {res,gw,gh,occ}=S.big.raster, G=tabGeo(), lab=lay.labels, nc=lay.nc, loc=knobLocal();
   const cell=(x,y)=>{ const cx=Math.floor(x/res), cy=Math.floor(y/res); return (cx<0||cy<0||cx>=gw||cy>=gh) ? -1 : cy*gw+cx; };
   const spacing=70, tabs=[];
-  const seams=[...lay.vpaths.map(p=>({p,col:-1})), ...lay.hpaths.flatMap((col,k)=>col.map(p=>({p,col:k})))];
+  const seams=lay.smart ? lay.cuts.map(c=>({p:c.path,col:-1})) : [...lay.vpaths.map(p=>({p,col:-1})), ...lay.hpaths.flatMap((col,k)=>col.map(p=>({p,col:lay.merged?-1:k})))];
   seams.forEach((sm,si)=>{
     const P=sm.p; if (P.length<2) return;
     const L=[0]; for (let i=1;i<P.length;i++) L.push(L[i-1]+Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]));
@@ -593,13 +601,130 @@ function tabsClearOf(tabs, fr){
     return true;
   });
 }
-function evaluate(xs, ys, half){
-  const lay = half ? curvedLayout(xs,ys,half) : straightLayout(xs,ys);
-  if (!lay) return null;
+/* ---------- smart splitting: cut only where needed ---------- */
+// Start with the whole oversized part. While a piece is too big for the bed, cut it once along the
+// cheapest path (usually a thin stroke where letters join), then repeat on whatever still doesn't fit.
+let layCounter=0;
+function maskFit(inP, b, M){ // footprint of the material cells where inP(i), within cell bbox b
+  const {res,gw,occ}=S.big.raster, pts=[]; let area=0;
+  for (let y=b.y0;y<=b.y1;y++){ let a=-1,e=-1; const o=y*gw;
+    for (let x=b.x0;x<=b.x1;x++){ const i=o+x; if (occ[i]&&inP(i)){ if(a<0)a=x; e=x; area++; } }
+    if (a>=0) pts.push([a*res,y*res],[(e+1)*res,y*res],[a*res,(y+1)*res],[(e+1)*res,(y+1)*res]); }
+  let bw=0,bh=0; if (pts.length){ let x0=1e9,x1=-1e9; for (const [x] of pts){ if(x<x0)x0=x; if(x>x1)x1=x; } bw=x1-x0; bh=pts[pts.length-1][1]-pts[0][1]; }
+  return {fit: pts.length? bestFit(pts,M) : {fits:true,w:0,h:0}, area:area*res*res, bw, bh};
+}
+function smartLayout(){
+  const B=S.big, {res,gw,gh,occ}=B.raster, d=tabDepth(), Mfit=S.maxMM-d;
+  const labels=new Int16Array(gw*gh), pieces=[{sides:[]}], cuts=[];
+  const near=new Uint8Array(gw*gh);
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++) if (occ[y*gw+x]) for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){ const nx=x+dx, ny=y+dy; if(nx>=0&&ny>=0&&nx<gw&&ny<gh) near[ny*gw+nx]=1; }
+  const K=25, half=Math.round(35/res), step=Math.round(15/res), edge=Math.round(20/res);
+  const bboxOf=p=>{ let x0=gw,y0=gh,x1=-1,y1=-1;
+    for (let y=0;y<gh;y++){ const o=y*gw; for (let x=0;x<gw;x++){ const i=o+x; if (labels[i]===p && occ[i]){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; } } }
+    return x1<0?null:{x0,y0,x1,y1}; };
+  const work=[0]; let guard=0;
+  while (work.length && pieces.length<40 && guard++<80){
+    const p=work.shift(), b=bboxOf(p); if(!b) continue;
+    if (maskFit(i=>labels[i]===p,b,Mfit).fit.fits) continue;
+    // candidate cut positions: the columns/rows crossing the least material, plus the thirds and middle
+    const colC=new Float64Array(b.x1-b.x0+1), rowC=new Float64Array(b.y1-b.y0+1);
+    for (let y=b.y0;y<=b.y1;y++) for (let x=b.x0;x<=b.x1;x++){ const i=y*gw+x; if (occ[i]&&labels[i]===p){ colC[x-b.x0]++; rowC[y-b.y0]++; } }
+    const pick=(cost,lo,hi)=>{ const idx=[]; for (let k=lo;k<=hi;k++) idx.push(k); idx.sort((a,c)=>cost[a]-cost[c]);
+      const out=[]; for (const k of idx){ if (out.length>=3) break; if (out.every(o=>Math.abs(o-k)>=step)) out.push(k); }
+      for (const f of [1/3,1/2,2/3]){ const k=Math.round(lo+(hi-lo)*f); if (out.every(o=>Math.abs(o-k)>=step/2)) out.push(k); }
+      return out; };
+    const cands=[], Wc=b.x1-b.x0, Hc=b.y1-b.y0, Mc=Math.round(Mfit/res);
+    // also try the cheapest cut just inside one bed-width from each edge: that side then fits while taking as much as it can
+    const near_=(cost,len,lo,hi)=>{ lo=Math.max(edge,Math.round(lo)); hi=Math.min(len-edge,Math.round(hi)); if (hi<lo) return [];
+      let k0=lo; for (let k=lo;k<=hi;k++) if (cost[k]<cost[k0] || (cost[k]===cost[k0] && Math.abs(k-hi)<Math.abs(k0-hi))) k0=k; return [k0]; };
+    const addAll=(kind,cost,len,base)=>{ const ks=new Set([...pick(cost,edge,len-edge), ...near_(cost,len,0.6*Mc,0.95*Mc), ...near_(cost,len,len-0.95*Mc,len-0.6*Mc)]);
+      for (const k of ks) cands.push({kind,pos:base+k}); };
+    if (Wc>2*edge) addAll('v',colC,Wc,b.x0);
+    if (Hc>2*edge) addAll('h',rowC,Hc,b.y0);
+    let best=null;
+    for (const c of cands){
+      const cost=(x,y,dev)=>{ const i=y*gw+x; return (labels[i]===p ? (occ[i]?K:(near[i]?3:1)) : 0.3) + 0.03*Math.abs(dev); };
+      let P;
+      if (c.kind==='v'){ const x0=Math.max(0,c.pos-half), x1=Math.min(gw-1,c.pos+half), y0=Math.max(0,b.y0-2), y1=Math.min(gh-1,b.y1+2);
+        P=cheapestPath(x0,x1,y0,y1,(x,y)=>cost(x,y,x-c.pos),(x,y)=>y===y0,(x,y)=>y===y1); }
+      else { const y0=Math.max(0,c.pos-half), y1=Math.min(gh-1,c.pos+half), x0=Math.max(0,b.x0-2), x1=Math.min(gw-1,b.x1+2);
+        P=cheapestPath(x0,x1,y0,y1,(x,y)=>cost(x,y,y-c.pos),(x,y)=>x===x0,(x,y)=>x===x1); }
+      if (!P) continue;
+      let cross=0; for (const [x,y] of P){ const i=y*gw+x; if (labels[i]===p && occ[i]) cross++; }
+      const path=simplifyPath(P.map(([x,y])=>[(x+0.5)*res,(y+0.5)*res]),0.35);
+      const side=polyMask(c.kind==='v'?leftOfPoly(path):belowPoly(path));
+      const A=maskFit(i=>labels[i]===p&&side[i]===1,b,Mfit), Bs=maskFit(i=>labels[i]===p&&side[i]!==1,b,Mfit);
+      if (A.area<150 || Bs.area<150) continue;
+      // estimate how many pieces each side will end up as (1 if it fits, else a bed-sized grid over its best-angle box)
+      const grid=(w,h)=>Math.ceil(w/(Mfit*0.97))*Math.ceil(h/(Mfit*0.97));
+      const est=s=>s.fit.fits?1:Math.max(2, Math.min(grid(s.fit.w,s.fit.h), grid(s.bw,s.bh)));
+      const over=s=>s.fit.fits?0:Math.max(0,Math.max(s.fit.w,s.fit.h)-Mfit);
+      // fewest expected pieces first, then the thinnest crossing, then how close the rest is to fitting
+      const score=1000*(est(A)+est(Bs)) + cross*res + 0.5*(over(A)+over(Bs));
+      if (!best || score<best.score) best={score,path,side,kind:c.kind};
+    }
+    if (!best) continue; // nothing sensible to cut; the piece stays flagged as too big
+    const q=pieces.length, ci=cuts.length; cuts.push({path:best.path, kind:best.kind});
+    pieces.push({sides:[...pieces[p].sides,{cut:ci,keep:-1}]}); pieces[p].sides.push({cut:ci,keep:1});
+    for (let i=0;i<labels.length;i++) if (labels[i]===p && best.side[i]!==1) labels[i]=q;
+    work.push(p,q);
+  }
+  // name pieces C1, C2… in reading order (top to bottom in 2-inch bands, then left to right)
+  const n=pieces.length, sx=new Float64Array(n), sy=new Float64Array(n), cnt=new Float64Array(n);
+  for (let i=0;i<labels.length;i++) if (occ[i]){ const t=labels[i]; sx[t]+=i%gw; sy[t]+=(i/gw)|0; cnt[t]++; }
+  const order=[...Array(n).keys()].sort((a,b)=>{ const ya=cnt[a]?sy[a]/cnt[a]*res:0, yb=cnt[b]?sy[b]/cnt[b]*res:0;
+    return (Math.round(-ya/(2*MM_IN))-Math.round(-yb/(2*MM_IN))) || ((cnt[a]?sx[a]/cnt[a]:0)-(cnt[b]?sx[b]/cnt[b]:0)); });
+  const names=new Array(n); order.forEach((t,k)=>names[t]='C'+(k+1));
+  return {curved:true, smart:true, nc:n, nr:1, labels, cuts, pieces, names, vpaths:[], hpaths:[]};
+}
+/* Take a grid layout and merge neighbouring pieces while the merged piece still fits the bed,
+   removing the seams that cut the most art first. This drops cuts a straight-through grid line forced on a letter. */
+function mergeLayout(lay){
+  const {res,gw,gh,occ}=S.big.raster, nT=lay.nc*lay.nr, lab=lay.labels, Mfit=S.maxMM-tabDepth();
+  const mn=new Int32Array(nT*gh).fill(1<<30), mx=new Int32Array(nT*gh).fill(-1), has=new Uint8Array(nT);
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x; if(!occ[i]) continue; const t=lab[i], k=t*gh+y; if(x<mn[k])mn[k]=x; if(x>mx[k])mx[k]=x; has[t]=1; }
+  const w=new Map(); // seam weight between tiles = art cells along their shared edge
+  const bump=(a,b,v)=>{ if(a===b) return; const k=a<b?a*nT+b:b*nT+a; w.set(k,(w.get(k)||0)+v); };
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x;
+    if (x+1<gw) bump(lab[i],lab[i+1], occ[i]&&occ[i+1]?1:0); if (y+1<gh) bump(lab[i],lab[i+gw], occ[i]&&occ[i+gw]?1:0); }
+  const grp=[...Array(nT).keys()], members=grp.map(t=>[t]);
+  const fits=list=>{ const pts=[]; for (let y=0;y<gh;y++){ let a=1<<30,b=-1; for (const t of list){ const k=t*gh+y; if(mn[k]<a)a=mn[k]; if(mx[k]>b)b=mx[k]; }
+      if (b>=0) pts.push([a*res,y*res],[(b+1)*res,y*res],[a*res,(y+1)*res],[(b+1)*res,(y+1)*res]); }
+    return !pts.length || bestFit(pts,Mfit).fits; };
+  for (;;){
+    let best=null;
+    for (const [k,v] of w){ const a=grp[(k/nT)|0], b=grp[k%nT]; if (a===b || !has[a] || !has[b]) continue;
+      if (best && v<=best.v) continue; if (fits([...members[a],...members[b]])) best={a,b,v}; }
+    if (!best) break;
+    const {a,b}=best; for (const t of members[b]){ grp[t]=a; } members[a].push(...members[b]); members[b]=[];
+    for (let t=0;t<nT;t++) if (grp[t]===b) grp[t]=a;
+  }
+  // renumber groups 0..G-1 and relabel cells
+  const ids=[...new Set(grp)], idx=new Map(ids.map((g,i)=>[g,i])), groupOf=grp.map(g=>idx.get(g));
+  if (ids.length===nT) return null; // nothing merged
+  const labels=new Int16Array(lab.length); for (let i=0;i<lab.length;i++) labels[i]=groupOf[lab[i]];
+  const n=ids.length, sx=new Float64Array(n), sy=new Float64Array(n), cnt=new Float64Array(n);
+  for (let i=0;i<labels.length;i++) if (occ[i]){ const t=labels[i]; sx[t]+=i%gw; sy[t]+=(i/gw)|0; cnt[t]++; }
+  const order=[...Array(n).keys()].sort((a,b)=>{ const ya=cnt[a]?sy[a]/cnt[a]*res:0, yb=cnt[b]?sy[b]/cnt[b]*res:0;
+    return (Math.round(-ya/(2*MM_IN))-Math.round(-yb/(2*MM_IN))) || ((cnt[a]?sx[a]/cnt[a]:0)-(cnt[b]?sx[b]/cnt[b]:0)); });
+  const names=new Array(n); order.forEach((t,k)=>names[t]='C'+(k+1));
+  return {curved:lay.curved, merged:true, base:lay, groupOf, nc:n, nr:1, labels, names, vpaths:lay.vpaths, hpaths:lay.hpaths.map(c=>c.slice())};
+}
+/* How much art the seams cut through (mm of crossing) — the tie-breaker between equal piece counts. */
+function seamArt(lay){
+  const {gw,gh,occ,res}=S.big.raster, l=lay.labels; let n=0;
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x; if(!occ[i]) continue;
+    if (x+1<gw && occ[i+1] && l[i+1]!==l[i]) n++; if (y+1<gh && occ[i+gw] && l[i+gw]!==l[i]) n++; }
+  return n*res;
+}
+const pieceCount = ev => ev.tiles.filter(t=>!t.fit.empty).length;
+function finishEval(lay){
+  if (!lay) return null; lay.id=++layCounter;
   const fr=findFragments(lay), tabs=tabsClearOf(seamTabs(lay),fr), fp=tileFootprints(lay,tabs,fr), M=S.maxMM;
   const fits=fp.map(f=>({...f, fit: f.pts.length? bestFit(f.pts,M) : {angle:0,w:0,h:0,fits:true,empty:true}}));
   return {lay, tabs, frags:fr.frags, tiles:fits, ok: fits.every(f=>f.fit.fits)};
 }
+function evaluate(xs, ys, half){ return finishEval(half ? curvedLayout(xs,ys,half) : straightLayout(xs,ys)); }
 function searchLayout(fixed){
   const m=S.big, R=m.raster, M=S.maxMM, d=tabDepth();
   const strict=M-2*d-0.5, diag=M*Math.SQRT2-2*d-1, Mc=Math.round(20/R.res);
@@ -679,15 +804,42 @@ function relayoutNow(fixed){
   if(!S.model) return;
   rebuildBig();
   if (!S.big){ S.nc=1; S.nr=1; S.xs=[]; S.ys=[]; S.ev=null; S.tabs=[]; S.pieces=null; refresh(); return; }
+  S.smartFell=false;
+  if (S.split==='smart' && !fixed){
+    // two ways to cut only where needed: one piece at a time at the thinnest join, or the best grid with
+    // neighbours merged back together wherever they still fit. Keep the one with fewer pieces, then less art cut.
+    const opts=[];
+    const g=finishEval(smartLayout()); if (g.ok) opts.push(g);
+    const L=searchLayout(); S.nc=L.nc; S.nr=L.nr; S.xs=L.xs; S.ys=L.ys; S.ev=L.ev;
+    let base=L.ev; if (S.seams==='follow'){ for (const h of [40,22]){ const ev=evaluate(L.xs,L.ys,h); if (ev && ev.ok){ base=ev; break; } } }
+    const mg=mergeLayout(base.lay), m=mg && finishEval(mg); if (m && m.ok) opts.push(m);
+    if (base.ok) opts.push(base);
+    if (opts.length){
+      opts.sort((a,b)=>(pieceCount(a)-pieceCount(b)) || (seamArt(a.lay)-seamArt(b.lay)));
+      const ev=opts[0]; S.ev=ev; S.nc=ev.lay.nc; S.nr=ev.lay.nr; S.xs=[]; S.ys=[];
+      S.curveFell=false; S.tabs=ev.tabs; S.pieces=null; seamKey=''; refresh(); return;
+    }
+    S.smartFell=true; // fall back to the grid
+  }
   applyLayout(searchLayout(fixed));
 }
-function reevaluate(){ busy(()=>{ S.ev=evaluate(S.xs,S.ys); finishLayout(); }); }
+function reevaluate(){ if (S.split==='smart' && !S.smartFell){ relayout(); return; } busy(()=>{ S.ev=evaluate(S.xs,S.ys); finishLayout(); }); }
 
 /* ---------- cutting ---------- */
-const label = (c,r) => String.fromCharCode(65 + (S.nr-1-r)) + (c+1);
+const label = (c,r) => S.ev?.lay?.names ? S.ev.lay.names[r*S.nc+c] : String.fromCharCode(65 + (S.nr-1-r)) + (c+1);
 function tileRegions(lay){ // one 2D outline per piece, indexed row*nc + col
+  if (lay.merged){ const base=tileRegions(lay.base), out=[];
+    for (let g=0; g<lay.nc; g++){ const mem=base.filter((_,t)=>lay.groupOf[t]===g); out.push(S.wasm.CrossSection.union(mem)); }
+    base.forEach(r=>r.delete()); return out; }
   const {CrossSection}=S.wasm, B=S.big, M=SEAM_M, nc=lay.nc, nr=lay.nr, out=[];
   const all=()=>CrossSection.square([B.W+2*M,B.H+2*M]).translate([-M,-M]);
+  if (lay.smart){ // each piece = everything, narrowed by the side of each cut it sits on
+    for (const pc of lay.pieces){ let reg=all();
+      for (const sd of pc.sides){ const cut=lay.cuts[sd.cut], cs=new CrossSection([cut.kind==='v'?leftOfPoly(cut.path):belowPoly(cut.path)]);
+        const n = sd.keep>0 ? reg.intersect(cs) : reg.subtract(cs); reg.delete(); cs.delete(); reg=n; }
+      out.push(reg); }
+    return out;
+  }
   const left=lay.vpaths.map(p=>new CrossSection([leftOfPoly(p)]));
   for (let r=0;r<nr;r++) for (let c=0;c<nc;c++) out.push(null);
   for (let c=0;c<nc;c++){
@@ -784,10 +936,15 @@ function getLayer(){
 /* Seam lines drawn from the piece map, so straight and design-following seams render the same way. */
 let seamCanvas=null, seamKey='';
 function seamLayer(k){
-  const B=S.big, {gw,gh}=B.raster, lab=S.ev.lay.labels, key=[k,tok('--cut'),S.ev.lay.curved,S.xs.join(),S.ys.join(),S.ev.tabs.length].join('|');
+  const B=S.big, {gw,gh}=B.raster, lab=S.ev.lay.labels, key=[k,tok('--cut'),S.ev.lay.id].join('|');
   if (seamCanvas && seamKey===key) return seamCanvas;
-  const edge=new Uint8Array(gw*gh);
-  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x; if ((x+1<gw && lab[i+1]!==lab[i]) || (y+1<gh && lab[i+gw]!==lab[i])) edge[i]=1; }
+  // only draw seams near the art: out in empty space they don't cut anything
+  if (!B.nearArt){ const {occ,res}=B.raster, r=Math.max(1,Math.round(4/res)), tmp=new Uint8Array(gw*gh), na=new Uint8Array(gw*gh);
+    for (let y=0;y<gh;y++){ let last=-1e9; for (let x=0;x<gw;x++){ if(occ[y*gw+x]) last=x; if(x-last<=r) tmp[y*gw+x]=1; } last=1e9; for (let x=gw-1;x>=0;x--){ if(occ[y*gw+x]) last=x; if(last-x<=r) tmp[y*gw+x]=1; } }
+    for (let x=0;x<gw;x++){ let last=-1e9; for (let y=0;y<gh;y++){ if(tmp[y*gw+x]) last=y; if(y-last<=r) na[y*gw+x]=1; } last=1e9; for (let y=gh-1;y>=0;y--){ if(tmp[y*gw+x]) last=y; if(last-y<=r) na[y*gw+x]=1; } }
+    B.nearArt=na; }
+  const edge=new Uint8Array(gw*gh), na=B.nearArt;
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const i=y*gw+x; if (na[i] && ((x+1<gw && lab[i+1]!==lab[i]) || (y+1<gh && lab[i+gw]!==lab[i]))) edge[i]=1; }
   const c=document.createElement('canvas'); c.width=gw; c.height=gh; const g=c.getContext('2d'), img=g.createImageData(gw,gh);
   const col=tok('--cut'), tmp=document.createElement('canvas').getContext('2d'); tmp.fillStyle=col; tmp.fillRect(0,0,1,1); const [cr,cg,cb]=tmp.getImageData(0,0,1,1).data;
   const h=Math.floor(k/2);
@@ -864,12 +1021,15 @@ function refresh(){
   const m=S.model; if(!m) return;
   $('cVal').textContent=S.nc; $('rVal').textContent=S.nr;
   ['cMinus','cPlus','rMinus','rPlus','autoBtn'].forEach(id=>$(id).disabled=!S.big);
+  $('gridCtl').hidden = S.split==='smart' && !S.smartFell;
   $('stats').innerHTML = `<dt>Width</dt><dd>${fmt(m.W)}</dd><dt>Height</dt><dd>${fmt(m.H)}</dd><dt>Thickness</dt><dd>${m.T.toFixed(1)} mm</dd><dt>Separate parts</dt><dd>${m.parts.length}</dd>`;
   const tiles=S.ev?.tiles.filter(t=>!t.fit.empty)||[]; const bad=tiles.filter(t=>!t.fit.fits).length; const ang=tiles.filter(t=>t.fit.angle).length;
   const n = S.pieces ? S.pieces.length : tiles.length, nw=wholeParts().length;
   const bits=[];
   if (S.big) bits.push(`${S.tabs.length} puzzle tab${S.tabs.length===1?'':'s'}`);
-  if (S.big && S.ev?.lay.curved) bits.push('seams follow the design');
+  if (S.big && (S.ev?.lay.smart || S.ev?.lay.merged)) bits.push('cut only where needed');
+  else if (S.big && S.smartFell) bits.push('grid layout, since cutting only where needed left a piece too big');
+  if (S.big && S.ev?.lay.curved && !S.ev.lay.smart && !S.ev.lay.merged) bits.push('seams follow the design');
   else if (S.big && S.curveFell) bits.push('straight seams, since following ones would not fit the bed');
   if (nw) bits.push(`${nw} part${nw===1?'':'s'} print whole`);
   const nf=S.ev?.frags?.length||0; if (S.big && nf) bits.push(`${nf} small tip${nf===1?'':'s'} kept attached`);
@@ -940,6 +1100,8 @@ $('cPlus').onclick=()=>{ if(S.nc<12) relayout([S.nc+1,S.nr]); };
 $('rMinus').onclick=()=>{ if(S.nr>1) relayout([S.nc,S.nr-1]); };
 $('rPlus').onclick=()=>{ if(S.nr<12) relayout([S.nc,S.nr+1]); };
 $('autoBtn').onclick=()=>relayout();
+const setSplit=v=>{ S.split=v; $('mSmart').setAttribute('aria-pressed',v==='smart'); $('mGrid').setAttribute('aria-pressed',v==='grid'); relayout(); };
+$('mSmart').onclick=()=>setSplit('smart'); $('mGrid').onclick=()=>setSplit('grid');
 const setSeams=v=>{ S.seams=v; $('sFollow').setAttribute('aria-pressed',v==='follow'); $('sStraight').setAttribute('aria-pressed',v==='straight'); if(S.big) reevaluate(); };
 $('sFollow').onclick=()=>setSeams('follow'); $('sStraight').onclick=()=>setSeams('straight');
 $('keepWhole').onchange=e=>{ S.keepWhole=e.target.checked; relayout(); };
