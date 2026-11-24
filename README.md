@@ -6,7 +6,7 @@ Load an STL (exported from Tinkercad or anywhere else), or drop in a logo pictur
 
 ## What it does
 
-- **Picture to model.** Drop a PNG, JPG or WebP logo. The tool finds the background (transparent, or the picture's most common colour), traces everything else with smooth edges, and builds a model at the width and thickness you set. Shapes touching the picture's edge, like screenshot frames, are left out. It warns about lines thinner than 2 mm and tiny loose bits. **Download full STL** gives you the whole model.
+- **Picture to model.** Drop a PNG, JPG or WebP logo. The tool finds the background (transparent, or the picture's most common colour), traces everything else with smooth edges, and builds a model at the width and thickness you set. Shapes touching the picture's edge, like screenshot frames, are left out. It warns about lines thinner than 2 mm and tiny loose bits. **Download full STL** saves the whole uncut model, so it also works as a plain picture-to-STL converter.
 - **Filament and price.** Every design shows an estimated filament weight and length, worked out from its volume and outline. The formula is tuned to Orca totals from three past jobs and matches them within about 1%. Price buttons show grams × 0.5, × 1 and × 2. To retune it for different slicer settings, change `G_VOL` and `G_WALL` near the top of the script.
 - **Cuts only where needed.** Oversized parts are cut one piece at a time at their thinnest joins (often where script letters connect), and the tool also tries the best grid with neighbouring pieces merged back together. It keeps whichever plan gives fewer pieces and cuts less of the art. A plain grid mode is still there.
 - **Keeps loose parts whole.** Separate letters, words and shapes that fit the bed are left uncut. Only parts too big for the bed get split.
@@ -14,6 +14,7 @@ Load an STL (exported from Tinkercad or anywhere else), or drop in a logo pictur
 - **Puzzle tabs.** Knob-and-socket joints go wherever a seam crosses art solid enough to hold one, with an adjustable fit gap.
 - **No stray bits.** A small tip that a cut would leave on its own stays with the piece it is attached to.
 - **Fits at an angle.** Each piece is checked against your bed at any rotation. Pieces that need an angle are exported already turned.
+- **Download one piece or all of them.** Each piece has its own STL button, for reprinting a single piece. On the GitHub Pages copy STLs save directly. In Claude's page viewer, which can't save .stl files, each one comes as a one-file zip.
 - **Named pieces.** Cut pieces are named A1, B2… (rows from the top, columns from the left). Whole parts are P1, P2… in reading order. The zip includes `layout.txt` and `layout.png`.
 
 ## Using it
