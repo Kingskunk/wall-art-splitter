@@ -3,3 +3,6 @@
 # the artifact source lives in splitter/index.html; its engine copy duplicates ./manifold.wasm
 splitter/manifold.wasm
 splitter/*.stl
+splitter/*.webp
+splitter/*.jpg
+splitter/*.png
